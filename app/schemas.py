@@ -9,3 +9,14 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+    class VoiceProfileCreate(BaseModel):
+    passphrase: str
+
+
+class VoiceProfileResponse(BaseModel):
+    id: int
+    user_id: int
+    passphrase: str
+
+    class Config:
+        from_attributes = True
