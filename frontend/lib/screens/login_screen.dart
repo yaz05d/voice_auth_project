@@ -3,6 +3,8 @@ import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
+import '../services/api_service.dart';
+import 'voice_recording_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,9 +29,32 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
-    // TODO: call login API
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) setState(() => _isLoading = false);
+
+    final api = ApiService();
+    final result = await api.login(
+      email: _emailCtrl.text.trim(),
+      password: _passwordCtrl.text,
+    );
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+      if (result['success']) {
+        // TODO: Navigate to home screen
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Login successful!'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message']),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -172,8 +197,12 @@ class _LoginScreenState extends State<LoginScreen> {
             // Voice login button
             OutlinedButton.icon(
               onPressed: () {
-                // TODO: navigate to voice login
-              },
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const VoiceRecordingScreen(mode: 'enroll'),
+                  ),
+                );              },
               icon: const Icon(Icons.mic_none_rounded,
                   color: AppColors.accent, size: 20),
               label: const Text(
