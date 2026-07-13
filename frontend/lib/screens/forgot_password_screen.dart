@@ -11,21 +11,21 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   bool _isLoading = false;
-  bool _emailSent = false;
+  bool _codeSent = false;
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _handleSendCode() async {
-    if (_emailCtrl.text.isEmpty || !_emailCtrl.text.contains('@')) {
+    if (_phoneCtrl.text.isEmpty || _phoneCtrl.text.length < 10) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Enter a valid email address'),
+          content: Text('Enter a valid phone number'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -33,12 +33,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     }
 
     setState(() => _isLoading = true);
-    // TODO: call forgot password API
+    // TODO: call send SMS code API
     await Future.delayed(const Duration(seconds: 2));
     if (mounted) {
       setState(() {
         _isLoading = false;
-        _emailSent = true;
+        _codeSent = true;
       });
     }
   }
@@ -59,7 +59,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
           const SizedBox(height: 32),
 
-          // Recovery method cards
+          // Recovery method label
           const Text(
             'RECOVERY METHOD',
             style: TextStyle(
@@ -81,35 +81,37 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => const ResetPasswordScreen(
-                        method: RecoveryMethod.voice)),
+                  builder: (_) => const ResetPasswordScreen(
+                      method: RecoveryMethod.voice),
+                ),
               );
             },
           ),
           const SizedBox(height: 12),
 
-          // Email Recovery
+          // Phone Recovery
           _RecoveryOption(
-            icon: Icons.mail_outline_rounded,
-            title: 'Email Verification',
-            subtitle: 'Receive a reset code at your registered email',
+            icon: Icons.phone_android_rounded,
+            title: 'Mobile Number Verification',
+            subtitle: 'Receive a reset code via SMS to your registered number',
             isRecommended: false,
             onTap: () => setState(() {}),
           ),
           const SizedBox(height: 28),
 
-          if (!_emailSent) ...[
+          // Phone input and send code button
+          if (!_codeSent) ...[
             AppTextField(
-              label: 'EMAIL ADDRESS',
-              hint: 'Confirm your registered email',
-              controller: _emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              prefixIcon: Icons.mail_outline_rounded,
+              label: 'MOBILE NUMBER',
+              hint: '+962 7XX XXX XXX',
+              controller: _phoneCtrl,
+              keyboardType: TextInputType.phone,
+              prefixIcon: Icons.phone_android_rounded,
             ),
             const SizedBox(height: 24),
 
             PrimaryButton(
-              label: 'Send Reset Code',
+              label: 'Send SMS Code',
               onPressed: _handleSendCode,
               isLoading: _isLoading,
             ),
@@ -139,7 +141,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Check ${_emailCtrl.text} for your reset code.',
+                    'Check your phone ${_phoneCtrl.text} for the SMS code.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: AppColors.textSecondary,
@@ -158,7 +160,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         ),
                       );
                     },
-                    child: const Text('Enter Reset Code'),
+                    child: const Text('Enter SMS Code'),
                   ),
                 ],
               ),
@@ -167,9 +169,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
             Center(
               child: TextButton(
-                onPressed: () => setState(() => _emailSent = false),
-                child: const Text('Resend code',
-                    style: TextStyle(color: AppColors.textSecondary)),
+                onPressed: () => setState(() => _codeSent = false),
+                child: const Text(
+                  'Resend code',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
               ),
             ),
           ],
@@ -224,11 +228,13 @@ class _RecoveryOption extends StatelessWidget {
                     : AppColors.inputBg,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon,
-                  color: isRecommended
-                      ? AppColors.accent
-                      : AppColors.textSecondary,
-                  size: 22),
+              child: Icon(
+                icon,
+                color: isRecommended
+                    ? AppColors.accent
+                    : AppColors.textSecondary,
+                size: 22,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -237,14 +243,16 @@ class _RecoveryOption extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: isRecommended
-                              ? AppColors.textPrimary
-                              : AppColors.textSecondary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            color: isRecommended
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       if (isRecommended) ...[
@@ -281,11 +289,11 @@ class _RecoveryOption extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded,
-                color: isRecommended
-                    ? AppColors.accent
-                    : AppColors.textHint,
-                size: 14),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: isRecommended ? AppColors.accent : AppColors.textHint,
+              size: 14,
+            ),
           ],
         ),
       ),
