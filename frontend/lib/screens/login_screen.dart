@@ -5,6 +5,7 @@ import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import '../services/api_service.dart';
 import 'voice_recording_screen.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,6 +28,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
+// TEMPORARY: bypass API for UI testing
+Navigator.of(context).pushAndRemoveUntil(
+MaterialPageRoute(builder: (_) => const HomeScreen()),
+(route) => false,
+);
+return;
+// rest of code below...
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
@@ -39,12 +47,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (mounted) {
       setState(() => _isLoading = false);
       if (result['success']) {
-        // TODO: Navigate to home screen
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login successful!'),
-            backgroundColor: AppColors.success,
-          ),
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+              (route) => false,
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
