@@ -28,13 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-// TEMPORARY: bypass API for UI testing
-Navigator.of(context).pushAndRemoveUntil(
-MaterialPageRoute(builder: (_) => const HomeScreen()),
-(route) => false,
-);
-return;
-// rest of code below...
+
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 

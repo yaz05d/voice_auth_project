@@ -4,37 +4,77 @@ import '../services/api_service.dart';
 import 'login_screen.dart';
 import 'voice_recording_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  String _fullName = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final api = ApiService();
+    final result = await api.getProfile();
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        if (result['success']) {
+          _fullName = result['data']['full_name'] ?? 'User';
+        } else {
+          _fullName = 'User';
+        }
+      });
+    }
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning,';
+    if (hour < 17) return 'Good afternoon,';
+    return 'Good evening,';
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.primary,
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: _isLoading
+            ? const Center(
+          child: CircularProgressIndicator(color: AppColors.accent),
+        )
+            : SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Top Bar ────────────────────────────────────────
+              // ── Top Bar ──────────────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text(
-                        'Good morning,',
-                        style: TextStyle(
+                        _getGreeting(),
+                        style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 14,
                         ),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
-                        'Yazeed Salameh',
-                        style: TextStyle(
+                        _fullName,
+                        style: const TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
@@ -45,7 +85,6 @@ class HomeScreen extends StatelessWidget {
                   ),
                   Row(
                     children: [
-                      // Notification bell
                       Container(
                         width: 42,
                         height: 42,
@@ -54,11 +93,12 @@ class HomeScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: AppColors.border),
                         ),
-                        child: const Icon(Icons.notifications_none_rounded,
-                            color: AppColors.textSecondary, size: 20),
+                        child: const Icon(
+                            Icons.notifications_none_rounded,
+                            color: AppColors.textSecondary,
+                            size: 20),
                       ),
                       const SizedBox(width: 10),
-                      // Logout
                       GestureDetector(
                         onTap: () async {
                           final api = ApiService();
@@ -89,7 +129,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 28),
 
-              // ── Balance Card ────────────────────────────────────
+              // ── Balance Card ──────────────────────────────
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
@@ -127,10 +167,11 @@ class HomeScreen extends StatelessWidget {
                             color: AppColors.success.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                                color: AppColors.success.withOpacity(0.3)),
+                                color:
+                                AppColors.success.withOpacity(0.3)),
                           ),
-                          child: Row(
-                            children: const [
+                          child: const Row(
+                            children: [
                               Icon(Icons.verified_user_rounded,
                                   color: AppColors.success, size: 12),
                               SizedBox(width: 4),
@@ -149,7 +190,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'JD 12 ,450.00',
+                      'JD 12,450.00',
                       style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 36,
@@ -167,7 +208,6 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    // Card number
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -190,7 +230,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 28),
 
-              // ── Quick Actions ───────────────────────────────────
+              // ── Quick Actions ─────────────────────────────
               const Text(
                 'QUICK ACTIONS',
                 style: TextStyle(
@@ -229,7 +269,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 28),
 
-              // ── Voice Security Banner ───────────────────────────
+              // ── Voice Security Banner ─────────────────────
               GestureDetector(
                 onTap: () {
                   Navigator.push(
@@ -249,20 +289,10 @@ class HomeScreen extends StatelessWidget {
                     border: Border.all(
                         color: AppColors.accent.withOpacity(0.2)),
                   ),
-                  child: Row(
+                  child: const Row(
                     children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: AppColors.accent.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.mic_rounded,
-                            color: AppColors.accent, size: 22),
-                      ),
-                      const SizedBox(width: 14),
-                      const Expanded(
+                      SizedBox(width: 14),
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -285,7 +315,7 @@ class HomeScreen extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Icon(Icons.arrow_forward_ios_rounded,
+                      Icon(Icons.arrow_forward_ios_rounded,
                           color: AppColors.accent, size: 14),
                     ],
                   ),
@@ -293,7 +323,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 28),
 
-              // ── Recent Transactions ─────────────────────────────
+              // ── Recent Transactions ───────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [

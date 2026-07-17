@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // Change this to Mahmoud's IP when testing on real device
-  static const String baseUrl = 'http://10.0.2.2:8000';
+  static const String baseUrl = 'http://192.168.1.124:8000';
 
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
@@ -34,17 +34,26 @@ class ApiService {
     required String fullName,
     required String email,
     required String password,
-    required String phone,
   }) async {
     try {
-      final response = await _dio.post('/auth/register', data: {
+      print('=== REGISTER REQUEST ===');
+      print('URL: $baseUrl/register');
+      print('Data: full_name=$fullName, email=$email');
+
+      final response = await _dio.post('/register', data: {
         'full_name': fullName,
         'email': email,
         'password': password,
-        'phone': phone,
       });
+
+      print('=== REGISTER SUCCESS ===');
+      print('Response: ${response.data}');
       return {'success': true, 'data': response.data};
     } on DioException catch (e) {
+      print('=== REGISTER ERROR ===');
+      print('Status code: ${e.response?.statusCode}');
+      print('Error data: ${e.response?.data}');
+      print('Error message: ${e.message}');
       return {
         'success': false,
         'message': e.response?.data?['detail'] ?? 'Registration failed'
@@ -57,10 +66,18 @@ class ApiService {
     required String password,
   }) async {
     try {
-      final response = await _dio.post('/auth/login', data: {
-        'email': email,
-        'password': password,
-      });
+      // Mahmoud's login uses OAuth2 form format
+      final response = await _dio.post(
+        '/login',
+        data: {
+          'username': email, // OAuth2 uses 'username' not 'email'
+          'password': password,
+          'grant_type': 'password',
+        },
+        options: Options(
+          contentType: 'application/x-www-form-urlencoded',
+        ),
+      );
 
       // Save token locally
       final prefs = await SharedPreferences.getInstance();
@@ -68,6 +85,9 @@ class ApiService {
 
       return {'success': true, 'data': response.data};
     } on DioException catch (e) {
+      print('=== LOGIN ERROR ===');
+      print('Status: ${e.response?.statusCode}');
+      print('Data: ${e.response?.data}');
       return {
         'success': false,
         'message': e.response?.data?['detail'] ?? 'Login failed'
@@ -84,4 +104,17 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('token') != null;
   }
+
+  Future<Map<String, dynamic>> getProfile() async {
+    try {
+      final response = await _dio.get('/profile');
+      return {'success': true, 'data': response.data};
+    } on DioException catch (e) {
+      return {
+        'success': false,
+        'message': e.response?.data?['detail'] ?? 'Failed to get profile'
+      };
+    }
+  }
+
 }

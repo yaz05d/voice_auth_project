@@ -52,7 +52,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       fullName: _nameCtrl.text.trim(),
       email: _emailCtrl.text.trim(),
       password: _passwordCtrl.text,
-      phone: _phoneCtrl.text.trim(),
     );
 
     if (mounted) {
@@ -146,8 +145,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 onPressed: () {
                   // Validate step 1 fields only
                   if (_nameCtrl.text.trim().isEmpty ||
-                      !_emailCtrl.text.contains('@') ||
-                      _phoneCtrl.text.trim().isEmpty) {
+                      !_emailCtrl.text.contains('@')) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Please fill all fields correctly'),
