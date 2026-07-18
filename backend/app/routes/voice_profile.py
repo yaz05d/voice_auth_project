@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
+
+import os
+import shutil
 
 from app.database.connection import SessionLocal
 from app.core.auth import get_current_user
 
 from app.models.user import User
 from app.models.voice_profile import VoiceProfile
-
-from app.schemas import VoiceProfileCreate
 
 router = APIRouter()
 
@@ -20,26 +21,23 @@ def get_db():
         db.close()
 
 
+UPLOAD_FOLDER = "app/uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
 @router.post("/voice-profile")
-def create_voice_profile(
-    data: VoiceProfileCreate,
-    current_user: str = Depends(get_current_user),
+async def create_voice_profile(
+    passphrase: str = Form(...),
+    audio: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    # Find the logged-in user
-    user = db.query(User).filter(User.email == current_user).first()
-
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="User not found"
-        )
-
     # Check if the user already has a voice profile
-    existing_profile = db.query(VoiceProfile).filter(
-        VoiceProfile.user_id == user.id
-    ).first()
+    existing_profile = (
+        db.query(VoiceProfile)
+        .filter(VoiceProfile.user_id == current_user.id)
+        .first()
+    )
 
     if existing_profile:
         raise HTTPException(
@@ -47,10 +45,19 @@ def create_voice_profile(
             detail="Voice profile already exists"
         )
 
-    # Create a new voice profile
+    # Save uploaded audio
+    file_extension = os.path.splitext(audio.filename)[1]
+    filename = f"{current_user.id}_{audio.filename}"
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(audio.file, buffer)
+
+    # Save in database
     new_profile = VoiceProfile(
-        user_id=user.id,
-        passphrase=data.passphrase,
+        user_id=current_user.id,
+        passphrase=passphrase,
+        audio_path=file_path,
         voice_embedding=None
     )
 
@@ -59,6 +66,7 @@ def create_voice_profile(
     db.refresh(new_profile)
 
     return {
-        "message": "Voice profile created successfully",
-        "voice_profile_id": new_profile.id
+        "message": "Voice uploaded successfully",
+        "user_id": current_user.id,
+        "file": file_path
     }

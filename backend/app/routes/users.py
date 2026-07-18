@@ -69,8 +69,9 @@ def login(
         "token_type": "bearer"
     }
 @router.get("/profile")
-def profile(current_user: str = Depends(get_current_user)):
+def profile(current_user: User = Depends(get_current_user)):
     return {
-        "message": "Welcome to your profile!",
-        "email": current_user
+        "id": current_user.id,
+        "full_name": current_user.full_name,
+        "email": current_user.email
     }

@@ -16,5 +16,6 @@ class User(Base):
     voice_profile = relationship(
     "VoiceProfile",
     back_populates="user",
-    uselist=False
+    uselist=False,
+    cascade="all, delete-orphan"
 )
