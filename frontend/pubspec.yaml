@@ -17,6 +17,7 @@ dependencies:
   permission_handler: ^11.3.0
   cupertino_icons: ^1.0.6
   just_audio: ^0.9.46
+  record: ^6.0.0
 
 dev_dependencies:
   flutter_test:

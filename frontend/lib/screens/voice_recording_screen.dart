@@ -1,9 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:record/record.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
+import '../services/api_service.dart';
 
 class VoiceRecordingScreen extends StatefulWidget {
-  final String mode; // 'enroll' or 'verify'
+  final String mode;
   const VoiceRecordingScreen({super.key, required this.mode});
 
   @override
@@ -14,9 +19,16 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     with TickerProviderStateMixin {
   bool _isRecording = false;
   bool _isDone = false;
+  bool _isUploading = false;
+  bool _uploadSuccess = false;
+  bool _isLoadingChallenge = true;
   int _secondsLeft = 5;
+  String? _audioPath;
+  String _challengePhrase = '"My voice is my password"';
+
   late AnimationController _waveCtrl;
   late Animation<double> _waveAnim;
+  final AudioRecorder _recorder = AudioRecorder();
 
   @override
   void initState() {
@@ -26,33 +38,134 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
       ..repeat(reverse: true);
     _waveAnim = Tween<double>(begin: 0.4, end: 1.0)
         .animate(CurvedAnimation(parent: _waveCtrl, curve: Curves.easeInOut));
+    _loadChallenge();
+  }
+
+  Future<void> _loadChallenge() async {
+    final api = ApiService();
+    final result = await api.getVoiceChallenge();
+    if (mounted) {
+      setState(() {
+        _isLoadingChallenge = false;
+        if (result['success']) {
+          final data = result['data'];
+          if (data is Map && data.containsKey('phrase')) {
+            _challengePhrase = '"${data['phrase']}"';
+          } else if (data is String) {
+            _challengePhrase = '"$data"';
+          } else {
+            _challengePhrase = '"My voice is my password"';
+          }
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
     _waveCtrl.dispose();
+    _recorder.dispose();
     super.dispose();
   }
 
   Future<void> _startRecording() async {
-    setState(() {
-      _isRecording = true;
-      _secondsLeft = 5;
-    });
-
-    // Countdown timer
-    for (int i = 5; i > 0; i--) {
-      await Future.delayed(const Duration(seconds: 1));
-      if (mounted) setState(() => _secondsLeft = i - 1);
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Microphone permission is required'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return;
     }
 
-    // TODO: Stop recording and send audio to Mahmoud's API
+    final dir = await getApplicationDocumentsDirectory();
+    _audioPath = '${dir.path}/voice_sample.wav';
+
+    if (mounted) {
+      setState(() {
+        _isRecording = true;
+        _secondsLeft = 5;
+      });
+    }
+
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    await _recorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.wav,
+        sampleRate: 16000,
+        numChannels: 1,
+      ),
+      path: _audioPath!,
+    );
+
+    for (int i = 4; i >= 0; i--) {
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+      setState(() => _secondsLeft = i);
+    }
+
+    await _recorder.stop();
+
     if (mounted) {
       setState(() {
         _isRecording = false;
         _isDone = true;
       });
+      await _uploadVoice();
     }
+  }
+
+  Future<void> _uploadVoice() async {
+    if (_audioPath == null) return;
+    setState(() => _isUploading = true);
+
+    final api = ApiService();
+    final result = await api.uploadVoiceProfile(
+      audioPath: _audioPath!,
+      passphrase: _challengePhrase.replaceAll('"', ''),
+    ).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => {
+        'success': false,
+        'message': 'Upload timed out — please try again'
+      },
+    );
+
+    if (mounted) {
+      setState(() {
+        _isUploading = false;
+        _uploadSuccess = result['success'];
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result['success']
+                ? 'Voice enrolled successfully!'
+                : result['message'],
+          ),
+          backgroundColor:
+          result['success'] ? AppColors.success : AppColors.error,
+        ),
+      );
+    }
+  }
+
+  void _resetRecording() {
+    setState(() {
+      _isRecording = false;
+      _isDone = false;
+      _isUploading = false;
+      _uploadSuccess = false;
+      _audioPath = null;
+      _secondsLeft = 5;
+    });
+    _loadChallenge();
   }
 
   @override
@@ -73,7 +186,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           ),
           const SizedBox(height: 40),
 
-          // Instructions card
+          // Challenge phrase card
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -94,9 +207,14 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                   ),
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  '"My voice is my password"',
-                  style: TextStyle(
+                _isLoadingChallenge
+                    ? const Center(
+                  child: CircularProgressIndicator(
+                      color: AppColors.accent),
+                )
+                    : Text(
+                  _challengePhrase,
+                  style: const TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -117,10 +235,28 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           ),
           const SizedBox(height: 40),
 
-          // Recording button
+          // Recording button or states
           Center(
-            child: _isDone
-                ? _DoneState(isEnroll: isEnroll)
+            child: _isUploading
+                ? const Column(
+              children: [
+                CircularProgressIndicator(color: AppColors.accent),
+                SizedBox(height: 16),
+                Text(
+                  'Saving your voiceprint...',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            )
+                : _isDone
+                ? _DoneState(
+              isEnroll: isEnroll,
+              uploadSuccess: _uploadSuccess,
+              onRetry: _resetRecording,
+            )
                 : _RecordButton(
               isRecording: _isRecording,
               secondsLeft: _secondsLeft,
@@ -130,8 +266,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           ),
           const SizedBox(height: 32),
 
-          // Tips
-          if (!_isRecording && !_isDone) ...[
+          if (!_isRecording && !_isDone && !_isUploading) ...[
             const Text(
               'TIPS FOR BEST RESULTS',
               style: TextStyle(
@@ -285,7 +420,14 @@ class _RecordButton extends StatelessWidget {
 // ── Done State ─────────────────────────────────────────────────────
 class _DoneState extends StatelessWidget {
   final bool isEnroll;
-  const _DoneState({required this.isEnroll});
+  final bool uploadSuccess;
+  final VoidCallback onRetry;
+
+  const _DoneState({
+    required this.isEnroll,
+    required this.uploadSuccess,
+    required this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -296,36 +438,54 @@ class _DoneState extends StatelessWidget {
           height: 100,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: AppColors.success.withOpacity(0.1),
-            border: Border.all(color: AppColors.success, width: 2),
+            color: uploadSuccess
+                ? AppColors.success.withOpacity(0.1)
+                : AppColors.error.withOpacity(0.1),
+            border: Border.all(
+              color: uploadSuccess ? AppColors.success : AppColors.error,
+              width: 2,
+            ),
           ),
-          child: const Icon(Icons.check_rounded,
-              color: AppColors.success, size: 48),
+          child: Icon(
+            uploadSuccess ? Icons.check_rounded : Icons.close_rounded,
+            color: uploadSuccess ? AppColors.success : AppColors.error,
+            size: 48,
+          ),
         ),
         const SizedBox(height: 20),
         Text(
-          isEnroll ? 'Voice enrolled!' : 'Voice verified!',
-          style: const TextStyle(
-            color: AppColors.success,
+          uploadSuccess
+              ? isEnroll ? 'Voice enrolled!' : 'Voice verified!'
+              : 'Upload failed',
+          style: TextStyle(
+            color: uploadSuccess ? AppColors.success : AppColors.error,
             fontSize: 18,
             fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 6),
         Text(
-          isEnroll
+          uploadSuccess
+              ? isEnroll
               ? 'Your voiceprint has been saved'
-              : 'Identity confirmed successfully',
+              : 'Identity confirmed successfully'
+              : 'Please try again',
           style: const TextStyle(
             color: AppColors.textSecondary,
             fontSize: 13,
           ),
         ),
         const SizedBox(height: 28),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(isEnroll ? 'Continue' : 'Done'),
-        ),
+        if (uploadSuccess)
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(isEnroll ? 'Continue' : 'Done'),
+          )
+        else
+          ElevatedButton(
+            onPressed: onRetry,
+            child: const Text('Try Again'),
+          ),
       ],
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
 import '../services/api_service.dart';
+import 'voice_recording_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -48,30 +49,60 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     final api = ApiService();
-    final result = await api.register(
+
+    // Step 1 — Register the user
+    final registerResult = await api.register(
       fullName: _nameCtrl.text.trim(),
+      email: _emailCtrl.text.trim(),
+      password: _passwordCtrl.text,
+    );
+
+    if (!registerResult['success']) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(registerResult['message']),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Step 2 — Automatically login to get JWT token
+    final loginResult = await api.login(
       email: _emailCtrl.text.trim(),
       password: _passwordCtrl.text,
     );
 
     if (mounted) {
       setState(() => _isLoading = false);
-      if (result['success']) {
+
+      if (loginResult['success']) {
+        // Token is now saved — go to voice enrollment
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Account created successfully!'),
+            content: Text('Account created! Now enroll your voice.'),
             backgroundColor: AppColors.success,
           ),
         );
-        // Go back to login
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message']),
-            backgroundColor: AppColors.error,
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const VoiceRecordingScreen(mode: 'enroll'),
           ),
         );
+      } else {
+        // Registration worked but auto-login failed
+        // Send them to login screen manually
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account created! Please login to continue.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        Navigator.popUntil(context, (route) => route.isFirst);
       }
     }
   }

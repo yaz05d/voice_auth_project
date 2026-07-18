@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
 
 class ApiService {
   // Change this to Mahmoud's IP when testing on real device
@@ -113,6 +114,48 @@ class ApiService {
       return {
         'success': false,
         'message': e.response?.data?['detail'] ?? 'Failed to get profile'
+      };
+    }
+  }
+  Future<Map<String, dynamic>> uploadVoiceProfile({
+    required String audioPath,
+    String passphrase = 'my voice is my password',
+  }) async {
+    try {
+      final formData = FormData.fromMap({
+        'audio': await MultipartFile.fromFile(
+          audioPath,
+          filename: 'voice_sample.wav',
+        ),
+        'passphrase': passphrase,
+      });
+
+      final response = await _dio.post(
+        '/voice-profile',
+        data: formData,
+        options: Options(contentType: 'multipart/form-data'),
+      );
+
+      return {'success': true, 'data': response.data};
+    } on DioException catch (e) {
+      print('=== VOICE UPLOAD ERROR ===');
+      print('Status: ${e.response?.statusCode}');
+      print('Data: ${e.response?.data}');
+      return {
+        'success': false,
+        'message': e.response?.data?['detail'] ?? 'Voice upload failed'
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> getVoiceChallenge() async {
+    try {
+      final response = await _dio.get('/voice/challenge');
+      return {'success': true, 'data': response.data};
+    } on DioException catch (e) {
+      return {
+        'success': false,
+        'message': e.response?.data?['detail'] ?? 'Failed to get challenge'
       };
     }
   }
