@@ -4,7 +4,7 @@ import 'package:dio/dio.dart';
 
 class ApiService {
   // Change this to Mahmoud's IP when testing on real device
-  static const String baseUrl = 'http://192.168.1.124:8000';
+  static const String baseUrl = 'http://10.12.150.90:8000';
 
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
@@ -156,6 +156,36 @@ class ApiService {
       return {
         'success': false,
         'message': e.response?.data?['detail'] ?? 'Failed to get challenge'
+      };
+    }
+  }
+  Future<Map<String, dynamic>> verifyVoice({
+    required String audioPath,
+    required String passphrase,
+  }) async {
+    try {
+      final formData = FormData.fromMap({
+        'audio': await MultipartFile.fromFile(
+          audioPath,
+          filename: 'voice_verify.wav',
+        ),
+        'passphrase': passphrase,
+      });
+
+      final response = await _dio.post(
+        '/voice/verify',
+        data: formData,
+        options: Options(contentType: 'multipart/form-data'),
+      );
+
+      return {'success': true, 'data': response.data};
+    } on DioException catch (e) {
+      print('=== VOICE VERIFY ERROR ===');
+      print('Status: ${e.response?.statusCode}');
+      print('Data: ${e.response?.data}');
+      return {
+        'success': false,
+        'message': e.response?.data?['detail'] ?? 'Voice verification failed'
       };
     }
   }

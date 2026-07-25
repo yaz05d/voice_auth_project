@@ -6,6 +6,7 @@ import 'forgot_password_screen.dart';
 import '../services/api_service.dart';
 import 'voice_recording_screen.dart';
 import 'home_screen.dart';
+import 'voice_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -199,7 +200,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const VoiceRecordingScreen(mode: 'enroll'),
+                    builder: (_) => const VoiceLoginScreen(),
                   ),
                 );              },
               icon: const Icon(Icons.mic_none_rounded,

@@ -79,7 +79,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
       return;
     }
     setState(() => _isLoading = true);
-    // TODO: call reset password API
+    // TODO: call reset password API when Mahmoud builds it
     await Future.delayed(const Duration(seconds: 2));
     if (mounted) {
       setState(() {

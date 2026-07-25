@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
+import 'voice_recovery_screen.dart';
 import 'reset_password_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -31,7 +32,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       );
       return;
     }
-
     setState(() => _isLoading = true);
     // TODO: call send SMS code API
     await Future.delayed(const Duration(seconds: 2));
@@ -51,15 +51,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 12),
-
           const ScreenHeader(
             title: 'Recover access',
             subtitle:
-            'We\'ll verify your identity using your voice biometrics.',
+            'Verify your identity to reset your password.',
           ),
           const SizedBox(height: 32),
 
-          // Recovery method label
           const Text(
             'RECOVERY METHOD',
             style: TextStyle(
@@ -71,7 +69,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
           const SizedBox(height: 12),
 
-          // Voice Recovery (primary — highlighted)
+          // Voice Recovery
           _RecoveryOption(
             icon: Icons.mic_rounded,
             title: 'Voice Biometric Recovery',
@@ -81,8 +79,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const ResetPasswordScreen(
-                      method: RecoveryMethod.voice),
+                  builder: (_) => const VoiceRecoveryScreen(),
                 ),
               );
             },
@@ -92,31 +89,28 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           // Phone Recovery
           _RecoveryOption(
             icon: Icons.phone_android_rounded,
-            title: 'Mobile Number Verification',
-            subtitle: 'Receive a reset code via SMS to your registered number',
+            title: 'Phone Number Verification',
+            subtitle: 'Receive a reset code via SMS',
             isRecommended: false,
             onTap: () => setState(() {}),
           ),
           const SizedBox(height: 28),
 
-          // Phone input and send code button
           if (!_codeSent) ...[
             AppTextField(
-              label: 'MOBILE NUMBER',
-              hint: '+962 7XX XXX XXX',
+              label: 'PHONE NUMBER',
+              hint: '+962 7X XXX XXXX',
               controller: _phoneCtrl,
               keyboardType: TextInputType.phone,
               prefixIcon: Icons.phone_android_rounded,
             ),
             const SizedBox(height: 24),
-
             PrimaryButton(
               label: 'Send SMS Code',
               onPressed: _handleSendCode,
               isLoading: _isLoading,
             ),
           ] else ...[
-            // Success state
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -166,18 +160,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
             Center(
               child: TextButton(
                 onPressed: () => setState(() => _codeSent = false),
-                child: const Text(
-                  'Resend code',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
+                child: const Text('Resend code',
+                    style:
+                    TextStyle(color: AppColors.textSecondary)),
               ),
             ),
           ],
-
           const SizedBox(height: 40),
         ],
       ),
@@ -185,7 +176,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 }
 
-// ─── Recovery Option Card ──────────────────────────────────────────
+// ── Recovery Option Card ───────────────────────────────────────────
 class _RecoveryOption extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -291,7 +282,8 @@ class _RecoveryOption extends StatelessWidget {
             ),
             Icon(
               Icons.arrow_forward_ios_rounded,
-              color: isRecommended ? AppColors.accent : AppColors.textHint,
+              color:
+              isRecommended ? AppColors.accent : AppColors.textHint,
               size: 14,
             ),
           ],
