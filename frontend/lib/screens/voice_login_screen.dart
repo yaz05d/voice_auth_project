@@ -1,7 +1,9 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
 import '../services/api_service.dart';
@@ -17,9 +19,7 @@ class VoiceLoginScreen extends StatefulWidget {
 class _VoiceLoginScreenState extends State<VoiceLoginScreen>
     with TickerProviderStateMixin {
   bool _isRecording = false;
-  bool _isDone = false;
   bool _isVerifying = false;
-  bool _verifySuccess = false;
   bool _isLoadingChallenge = true;
   int _secondsLeft = 5;
   String? _audioPath;
@@ -35,27 +35,9 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
     _waveCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600))
       ..repeat(reverse: true);
-    _waveAnim = Tween<double>(begin: 0.4, end: 1.0)
-        .animate(CurvedAnimation(parent: _waveCtrl, curve: Curves.easeInOut));
+    _waveAnim = Tween<double>(begin: 0.4, end: 1.0).animate(
+        CurvedAnimation(parent: _waveCtrl, curve: Curves.easeInOut));
     _loadChallenge();
-  }
-
-  Future<void> _loadChallenge() async {
-    final api = ApiService();
-    final result = await api.getVoiceChallenge();
-    if (mounted) {
-      setState(() {
-        _isLoadingChallenge = false;
-        if (result['success']) {
-          final data = result['data'];
-          if (data is Map && data.containsKey('phrase')) {
-            _challengePhrase = '"${data['phrase']}"';
-          } else if (data is String) {
-            _challengePhrase = '"$data"';
-          }
-        }
-      });
-    }
   }
 
   @override
@@ -63,6 +45,38 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
     _waveCtrl.dispose();
     _recorder.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadChallenge() async {
+    setState(() => _isLoadingChallenge = true);
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: ApiService.baseUrl,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ));
+
+      final response = await dio.get('/voice/challenge');
+
+      print('=== CHALLENGE SUCCESS ===');
+      print(response.data);
+
+      if (mounted) {
+        setState(() {
+          _isLoadingChallenge = false;
+          final data = response.data;
+          if (data is Map && data.containsKey('phrase')) {
+            _challengePhrase = '"${data['phrase']}"';
+          } else if (data is String) {
+            _challengePhrase = '"$data"';
+          }
+        });
+      }
+    } catch (e) {
+      print('=== CHALLENGE FAILED ===');
+      print(e);
+      if (mounted) setState(() => _isLoadingChallenge = false);
+    }
   }
 
   Future<void> _startRecording() async {
@@ -80,7 +94,7 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
     }
 
     final dir = await getApplicationDocumentsDirectory();
-    _audioPath = '${dir.path}/voice_verify.wav';
+    _audioPath = '${dir.path}/voice_login.wav';
 
     if (mounted) {
       setState(() {
@@ -109,10 +123,7 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
     await _recorder.stop();
 
     if (mounted) {
-      setState(() {
-        _isRecording = false;
-        _isDone = true;
-      });
+      setState(() => _isRecording = false);
       await _verifyVoice();
     }
   }
@@ -122,7 +133,7 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
     setState(() => _isVerifying = true);
 
     final api = ApiService();
-    final result = await api.verifyVoice(
+    final result = await api.voiceLogin(
       audioPath: _audioPath!,
       passphrase: _challengePhrase.replaceAll('"', ''),
     ).timeout(
@@ -133,14 +144,13 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
       },
     );
 
+    print('=== VOICE LOGIN RESULT ===');
+    print(result);
+
     if (mounted) {
-      setState(() {
-        _isVerifying = false;
-        _verifySuccess = result['success'];
-      });
+      setState(() => _isVerifying = false);
 
       if (result['success']) {
-        // Navigate to home screen
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Voice verified! Welcome back.'),
@@ -152,26 +162,28 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
               (route) => false,
         );
       } else {
+        String errorMessage = result['message'] ?? 'Voice not recognized';
+
+// Show friendly message for phrase mismatch
+        if (errorMessage.toLowerCase().contains('phrase')) {
+          errorMessage = 'We didn\'t catch that — please read the phrase clearly and try again.';
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message']),
+            content: Text(errorMessage),
             backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
           ),
         );
+        setState(() {
+          _isRecording = false;
+          _audioPath = null;
+          _secondsLeft = 5;
+        });
+        await _loadChallenge();
       }
     }
-  }
-
-  void _resetRecording() {
-    setState(() {
-      _isRecording = false;
-      _isDone = false;
-      _isVerifying = false;
-      _verifySuccess = false;
-      _audioPath = null;
-      _secondsLeft = 5;
-    });
-    _loadChallenge();
   }
 
   @override
@@ -188,7 +200,7 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
           ),
           const SizedBox(height: 32),
 
-          // Security info card
+          // Security info
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -204,7 +216,7 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Your voice will be compared against your enrolled voiceprint',
+                    'Your voice will be matched against your enrolled voiceprint',
                     style: TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 12,
@@ -255,7 +267,7 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Speak clearly in a quiet environment',
+                  'Read this phrase aloud clearly when recording',
                   style: TextStyle(
                     color: AppColors.textHint,
                     fontSize: 12,
@@ -266,12 +278,13 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
           ),
           const SizedBox(height: 40),
 
-          // Recording button or states
+          // Recording button or verifying
           Center(
             child: _isVerifying
                 ? const Column(
               children: [
-                CircularProgressIndicator(color: AppColors.accent),
+                CircularProgressIndicator(
+                    color: AppColors.accent),
                 SizedBox(height: 16),
                 Text(
                   'Verifying your voice...',
@@ -282,8 +295,6 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
                 ),
               ],
             )
-                : _isDone && !_verifySuccess
-                ? _FailedState(onRetry: _resetRecording)
                 : _RecordButton(
               isRecording: _isRecording,
               secondsLeft: _secondsLeft,
@@ -360,8 +371,8 @@ class _RecordButton extends StatelessWidget {
                     boxShadow: isRecording
                         ? [
                       BoxShadow(
-                        color: AppColors.accent
-                            .withOpacity(0.3 * waveAnim.value),
+                        color: AppColors.accent.withOpacity(
+                            0.3 * waveAnim.value),
                         blurRadius: 30,
                         spreadRadius: 5,
                       )
@@ -406,55 +417,6 @@ class _RecordButton extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ── Failed State ───────────────────────────────────────────────────
-class _FailedState extends StatelessWidget {
-  final VoidCallback onRetry;
-  const _FailedState({required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 100,
-          height: 100,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.error.withOpacity(0.1),
-            border: Border.all(color: AppColors.error, width: 2),
-          ),
-          child: const Icon(Icons.close_rounded,
-              color: AppColors.error, size: 48),
-        ),
-        const SizedBox(height: 20),
-        const Text(
-          'Voice not recognized',
-          style: TextStyle(
-            color: AppColors.error,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Your voice did not match.\nPlease try again.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 28),
-        ElevatedButton(
-          onPressed: onRetry,
-          child: const Text('Try Again'),
-        ),
-      ],
     );
   }
 }

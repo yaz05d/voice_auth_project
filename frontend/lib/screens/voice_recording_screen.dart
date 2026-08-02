@@ -18,13 +18,14 @@ class VoiceRecordingScreen extends StatefulWidget {
 class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     with TickerProviderStateMixin {
   bool _isRecording = false;
-  bool _isDone = false;
   bool _isUploading = false;
+  bool _isDone = false;
   bool _uploadSuccess = false;
-  bool _isLoadingChallenge = true;
   int _secondsLeft = 5;
-  String? _audioPath;
-  String _challengePhrase = '"My voice is my password"';
+  int _currentRecording = 1;
+  final List<String> _audioPaths = [];
+  double _audioLevel = 0.0;
+  bool _isSilent = false;
 
   late AnimationController _waveCtrl;
   late Animation<double> _waveAnim;
@@ -36,29 +37,8 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     _waveCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600))
       ..repeat(reverse: true);
-    _waveAnim = Tween<double>(begin: 0.4, end: 1.0)
-        .animate(CurvedAnimation(parent: _waveCtrl, curve: Curves.easeInOut));
-    _loadChallenge();
-  }
-
-  Future<void> _loadChallenge() async {
-    final api = ApiService();
-    final result = await api.getVoiceChallenge();
-    if (mounted) {
-      setState(() {
-        _isLoadingChallenge = false;
-        if (result['success']) {
-          final data = result['data'];
-          if (data is Map && data.containsKey('phrase')) {
-            _challengePhrase = '"${data['phrase']}"';
-          } else if (data is String) {
-            _challengePhrase = '"$data"';
-          } else {
-            _challengePhrase = '"My voice is my password"';
-          }
-        }
-      });
-    }
+    _waveAnim = Tween<double>(begin: 0.4, end: 1.0).animate(
+        CurvedAnimation(parent: _waveCtrl, curve: Curves.easeInOut));
   }
 
   @override
@@ -69,6 +49,17 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   }
 
   Future<void> _startRecording() async {
+    // Clean up recorder
+    try {
+      final isRecording = await _recorder.isRecording();
+      if (isRecording) {
+        await _recorder.stop();
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    } catch (e) {
+      print('Recorder cleanup error: $e');
+    }
+
     final status = await Permission.microphone.request();
     if (!status.isGranted) {
       if (mounted) {
@@ -83,27 +74,120 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     }
 
     final dir = await getApplicationDocumentsDirectory();
-    _audioPath = '${dir.path}/voice_sample.wav';
+    final audioPath =
+        '${dir.path}/voice_sample_${_currentRecording}_${DateTime.now().millisecondsSinceEpoch}.wav';
 
     if (mounted) {
       setState(() {
         _isRecording = true;
         _secondsLeft = 5;
+        _audioLevel = 0.0;
+        _isSilent = false;
       });
     }
 
     await Future.delayed(const Duration(milliseconds: 100));
 
+    // Warm up mic on first recording only
+    if (_currentRecording == 1) {
+      final warmupPath =
+          '${dir.path}/warmup_${DateTime.now().millisecondsSinceEpoch}.wav';
+
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+        path: warmupPath,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 800));
+      await _recorder.stop();
+
+      try {
+        final f = File(warmupPath);
+        if (await f.exists()) await f.delete();
+      } catch (e) {
+        print('Warmup cleanup: $e');
+      }
+
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+
+    // Start real recording
     await _recorder.start(
       const RecordConfig(
         encoder: AudioEncoder.wav,
         sampleRate: 16000,
         numChannels: 1,
       ),
-      path: _audioPath!,
+      path: audioPath,
     );
 
-    for (int i = 4; i >= 0; i--) {
+    // Monitor audio level in real time
+    bool hadSound = false;
+
+    _recorder.onAmplitudeChanged(
+      const Duration(milliseconds: 100),
+    ).listen((amp) {
+      if (mounted) {
+        final db = amp.current;
+        final level = ((db + 60) / 60).clamp(0.0, 1.0);
+        setState(() {
+          _audioLevel = level;
+          _isSilent = level < 0.05;
+        });
+        if (level >= 0.05) hadSound = true;
+      }
+    });
+
+    // Check for silence on ALL recordings after 2 seconds
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (!hadSound && mounted) {
+      await _recorder.stop();
+
+      try {
+        final f = File(audioPath);
+        if (await f.exists()) await f.delete();
+      } catch (e) {
+        print('Silent file cleanup: $e');
+      }
+
+      setState(() {
+        _isRecording = false;
+        _audioLevel = 0.0;
+        _isSilent = false;
+        _secondsLeft = 5;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.volume_off_rounded,
+                    color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'No sound detected. Please speak louder and try again.',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.error,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Sound detected — finish remaining 3 seconds
+    for (int i = 2; i >= 0; i--) {
       await Future.delayed(const Duration(seconds: 1));
       if (!mounted) return;
       setState(() => _secondsLeft = i);
@@ -113,23 +197,43 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
 
     if (mounted) {
       setState(() {
-        _isRecording = false;
-        _isDone = true;
+        _audioLevel = 0.0;
+        _isSilent = false;
       });
-      await _uploadVoice();
+    }
+
+    _audioPaths.add(audioPath);
+
+    if (mounted) {
+      setState(() => _isRecording = false);
+
+      if (_currentRecording < 5) {
+        setState(() => _currentRecording++);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Recording ${_currentRecording - 1} saved! Now record #$_currentRecording'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else {
+        await _uploadVoice();
+      }
     }
   }
 
   Future<void> _uploadVoice() async {
-    if (_audioPath == null) return;
     setState(() => _isUploading = true);
 
     final api = ApiService();
-    final result = await api.uploadVoiceProfile(
-      audioPath: _audioPath!,
-      passphrase: _challengePhrase.replaceAll('"', ''),
+    final result = await api.uploadVoiceProfile5(
+      audioPath1: _audioPaths[0],
+      audioPath2: _audioPaths[1],
+      audioPath3: _audioPaths[2],
+      audioPath4: _audioPaths[3],
+      audioPath5: _audioPaths[4],
     ).timeout(
-      const Duration(seconds: 15),
+      const Duration(seconds: 120),
       onTimeout: () => {
         'success': false,
         'message': 'Upload timed out — please try again'
@@ -139,33 +243,66 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     if (mounted) {
       setState(() {
         _isUploading = false;
+        _isDone = true;
         _uploadSuccess = result['success'];
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result['success']
-                ? 'Voice enrolled successfully!'
-                : result['message'],
+      if (result['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Voice enrolled successfully!'),
+            backgroundColor: AppColors.success,
+            duration: Duration(seconds: 3),
           ),
-          backgroundColor:
-          result['success'] ? AppColors.success : AppColors.error,
-        ),
-      );
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['message'].toString().isNotEmpty
+                  ? result['message']
+                  : 'Server error — please try again',
+            ),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
-  void _resetRecording() {
+  Future<void> _resetRecording() async {
+    try {
+      final isRecording = await _recorder.isRecording();
+      if (isRecording) {
+        await _recorder.stop();
+      }
+    } catch (e) {
+      print('Recorder stop error: $e');
+    }
+
+    for (final path in _audioPaths) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        print('File delete error: $e');
+      }
+    }
+
     setState(() {
       _isRecording = false;
       _isDone = false;
       _isUploading = false;
       _uploadSuccess = false;
-      _audioPath = null;
+      _currentRecording = 1;
       _secondsLeft = 5;
+      _audioLevel = 0.0;
+      _isSilent = false;
+      _audioPaths.clear();
     });
-    _loadChallenge();
   }
 
   @override
@@ -181,12 +318,20 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           ScreenHeader(
             title: isEnroll ? 'Voice Enrollment' : 'Voice Verification',
             subtitle: isEnroll
-                ? 'Record your voice to create your biometric voiceprint.'
+                ? 'Record your voice 5 times to create a strong voiceprint.'
                 : 'Speak to verify your identity.',
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 24),
 
-          // Challenge phrase card
+          if (isEnroll && !_isDone) ...[
+            _RecordingProgress(
+              current: _currentRecording,
+              completed: _audioPaths.length,
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // Phrase card
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -196,8 +341,8 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
+              children: const [
+                Text(
                   'SAY THIS PHRASE',
                   style: TextStyle(
                     color: AppColors.textSecondary,
@@ -206,15 +351,10 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                     letterSpacing: 1.0,
                   ),
                 ),
-                const SizedBox(height: 10),
-                _isLoadingChallenge
-                    ? const Center(
-                  child: CircularProgressIndicator(
-                      color: AppColors.accent),
-                )
-                    : Text(
-                  _challengePhrase,
-                  style: const TextStyle(
+                SizedBox(height: 10),
+                Text(
+                  '"My voice is my password"',
+                  style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -222,8 +362,8 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                     height: 1.4,
                   ),
                 ),
-                const SizedBox(height: 8),
-                const Text(
+                SizedBox(height: 8),
+                Text(
                   'Speak clearly in a quiet environment',
                   style: TextStyle(
                     color: AppColors.textHint,
@@ -233,9 +373,9 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
               ],
             ),
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 32),
 
-          // Recording button or states
+          // Main state
           Center(
             child: _isUploading
                 ? const Column(
@@ -243,10 +383,18 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                 CircularProgressIndicator(color: AppColors.accent),
                 SizedBox(height: 16),
                 Text(
-                  'Saving your voiceprint...',
+                  'Creating your voiceprint...',
                   style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 14,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'This may take up to 60 seconds',
+                  style: TextStyle(
+                    color: AppColors.textHint,
+                    fontSize: 12,
                   ),
                 ),
               ],
@@ -255,17 +403,21 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                 ? _DoneState(
               isEnroll: isEnroll,
               uploadSuccess: _uploadSuccess,
-              onRetry: _resetRecording,
+              onRetry: () async => await _resetRecording(),
             )
                 : _RecordButton(
               isRecording: _isRecording,
               secondsLeft: _secondsLeft,
+              recordingNumber: _currentRecording,
               waveAnim: _waveAnim,
+              audioLevel: _audioLevel,
+              isSilent: _isSilent,
               onTap: _isRecording ? null : _startRecording,
             ),
           ),
           const SizedBox(height: 32),
 
+          // Tips
           if (!_isRecording && !_isDone && !_isUploading) ...[
             const Text(
               'TIPS FOR BEST RESULTS',
@@ -281,6 +433,8 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
             _tip(Icons.noise_aware_outlined, 'Find a quiet place'),
             _tip(Icons.phone_android_outlined,
                 'Hold phone 15-20cm from mouth'),
+            _tip(Icons.refresh_rounded, 'Each recording improves accuracy'),
+            _tip(Icons.timer_outlined, 'Speak for at least 2 seconds'),
           ],
 
           const SizedBox(height: 40),
@@ -305,17 +459,85 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   }
 }
 
+// ── Recording Progress ─────────────────────────────────────────────
+class _RecordingProgress extends StatelessWidget {
+  final int current;
+  final int completed;
+
+  const _RecordingProgress({
+    required this.current,
+    required this.completed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Recording $current of 5',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '$completed/5 complete',
+              style: const TextStyle(
+                color: AppColors.accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: List.generate(5, (i) {
+            final isDone = i < completed;
+            final isCurrent = i == completed;
+            return Expanded(
+              child: Container(
+                margin: const EdgeInsets.only(right: 6),
+                height: 6,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(3),
+                  color: isDone
+                      ? AppColors.success
+                      : isCurrent
+                      ? AppColors.accent
+                      : AppColors.border,
+                ),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
 // ── Record Button ──────────────────────────────────────────────────
 class _RecordButton extends StatelessWidget {
   final bool isRecording;
   final int secondsLeft;
+  final int recordingNumber;
   final Animation<double> waveAnim;
+  final double audioLevel;
+  final bool isSilent;
   final VoidCallback? onTap;
 
   const _RecordButton({
     required this.isRecording,
     required this.secondsLeft,
+    required this.recordingNumber,
     required this.waveAnim,
+    required this.audioLevel,
+    required this.isSilent,
     this.onTap,
   });
 
@@ -367,8 +589,8 @@ class _RecordButton extends StatelessWidget {
                     boxShadow: isRecording
                         ? [
                       BoxShadow(
-                        color: AppColors.accent
-                            .withOpacity(0.3 * waveAnim.value),
+                        color: AppColors.accent.withOpacity(
+                            0.3 * waveAnim.value),
                         blurRadius: 30,
                         spreadRadius: 5,
                       )
@@ -392,27 +614,92 @@ class _RecordButton extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            Text(
-              isRecording ? 'Recording...' : 'Tap to start recording',
-              style: TextStyle(
-                color: isRecording
-                    ? AppColors.accent
-                    : AppColors.textSecondary,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            if (isRecording)
+
+            // Audio level bars and status
+            if (isRecording) ...[
+              _AudioLevelBars(audioLevel: audioLevel),
+              const SizedBox(height: 12),
+              if (isSilent)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: AppColors.error.withOpacity(0.3)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.volume_off_rounded,
+                          color: AppColors.error, size: 16),
+                      SizedBox(width: 6),
+                      Text(
+                        'Can\'t hear you — speak louder!',
+                        style: TextStyle(
+                          color: AppColors.error,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                const Text(
+                  'Listening...',
+                  style: TextStyle(
+                    color: AppColors.accent,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ] else ...[
               Text(
-                '$secondsLeft seconds remaining',
+                'Tap to record #$recordingNumber',
                 style: const TextStyle(
-                  color: AppColors.textHint,
-                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Audio Level Bars ───────────────────────────────────────────────
+class _AudioLevelBars extends StatelessWidget {
+  final double audioLevel;
+
+  const _AudioLevelBars({required this.audioLevel});
+
+  @override
+  Widget build(BuildContext context) {
+    final barHeights = [0.4, 0.6, 0.8, 1.0, 0.8, 0.6, 0.4];
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: barHeights.map((multiplier) {
+        final height =
+        (8 + (40 * audioLevel * multiplier)).clamp(4.0, 48.0);
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          width: 5,
+          height: height,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: audioLevel < 0.05
+                ? AppColors.border
+                : AppColors.accent,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        );
+      }).toList(),
     );
   }
 }
@@ -421,7 +708,7 @@ class _RecordButton extends StatelessWidget {
 class _DoneState extends StatelessWidget {
   final bool isEnroll;
   final bool uploadSuccess;
-  final VoidCallback onRetry;
+  final Future<void> Function() onRetry;
 
   const _DoneState({
     required this.isEnroll,
@@ -455,8 +742,10 @@ class _DoneState extends StatelessWidget {
         const SizedBox(height: 20),
         Text(
           uploadSuccess
-              ? isEnroll ? 'Voice enrolled!' : 'Voice verified!'
-              : 'Upload failed',
+              ? isEnroll
+              ? 'Voice enrolled!'
+              : 'Voice verified!'
+              : 'Enrollment failed',
           style: TextStyle(
             color: uploadSuccess ? AppColors.success : AppColors.error,
             fontSize: 18,
@@ -469,10 +758,12 @@ class _DoneState extends StatelessWidget {
               ? isEnroll
               ? 'Your voiceprint has been saved'
               : 'Identity confirmed successfully'
-              : 'Please try again',
+              : 'One of your recordings was inconsistent.\nTap Try Again to re-record all 5.',
+          textAlign: TextAlign.center,
           style: const TextStyle(
             color: AppColors.textSecondary,
             fontSize: 13,
+            height: 1.5,
           ),
         ),
         const SizedBox(height: 28),
@@ -483,7 +774,7 @@ class _DoneState extends StatelessWidget {
           )
         else
           ElevatedButton(
-            onPressed: onRetry,
+            onPressed: () async => await onRetry(),
             child: const Text('Try Again'),
           ),
       ],

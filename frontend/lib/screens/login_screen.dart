@@ -65,10 +65,10 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 48),
+            const SizedBox(height: 28),
 
             // Logo
-            const Center(child: VoiceLogo(size: 64)),
+            const Center(child: VoiceLogo(size: 80)),
             const SizedBox(height: 28),
 
             // Header
@@ -116,8 +116,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       'Your voice is your password. AI-protected login.',
                       style: TextStyle(
                         color: AppColors.textSecondary,
-                        fontSize: 12.5,
-                        height: 1.4,
+                        fontSize: 13,
+                        height: 1.5,
                       ),
                     ),
                   ),
@@ -215,7 +215,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 56),
-                side: const BorderSide(color: AppColors.accent, width: 1.5),
+                backgroundColor: AppColors.accent.withOpacity(0.08),
+                side: const BorderSide(color: AppColors.accent, width: 2),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
               ),

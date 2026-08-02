@@ -141,13 +141,6 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
       });
 
       if (result['success']) {
-        // Voice verified — go to reset password
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Identity confirmed! Set your new password.'),
-            backgroundColor: AppColors.success,
-          ),
-        );
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
