@@ -21,28 +21,55 @@ class VoiceProfile(Base):
         unique=True
     )
 
-    # Path of uploaded voice file
+    # Store first audio path
     audio_path = Column(
         String,
         nullable=True
     )
 
-    # Later we store extracted voice features here
-    voice_embedding = Column(
+
+    # ==================================
+    # Store 5 voice embeddings
+    # ==================================
+
+    voice_embedding1 = Column(
         String,
-        nullable=True
+        nullable=False
     )
 
-    # The sentence used during registration
+    voice_embedding2 = Column(
+        String,
+        nullable=False
+    )
+
+    voice_embedding3 = Column(
+        String,
+        nullable=False
+    )
+
+    voice_embedding4 = Column(
+        String,
+        nullable=False
+    )
+
+    voice_embedding5 = Column(
+        String,
+        nullable=False
+    )
+
+
+    # The challenge phrase used during registration
     passphrase = Column(
         String,
         nullable=True
     )
 
+
     created_at = Column(
         DateTime,
         default=datetime.utcnow
     )
+
 
     user = relationship(
         "User",
@@ -50,8 +77,10 @@ class VoiceProfile(Base):
     )
 
 
+
 class VoiceChallenge(Base):
     __tablename__ = "voice_challenges"
+
 
     id = Column(
         Integer,
@@ -59,11 +88,13 @@ class VoiceChallenge(Base):
         index=True
     )
 
+
     user_id = Column(
         Integer,
         ForeignKey("users.id"),
         nullable=True
     )
+
 
     # Random phrase generated for verification
     phrase = Column(
@@ -71,11 +102,13 @@ class VoiceChallenge(Base):
         nullable=False
     )
 
-    # To prevent reusing the same challenge
+
+    # Prevent reusing old challenges
     used = Column(
         Boolean,
         default=False
     )
+
 
     created_at = Column(
         DateTime,

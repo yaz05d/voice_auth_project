@@ -5,10 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.database.connection import SessionLocal
 from app.models.user import User
+from app.core.security import SECRET_KEY, ALGORITHM
 
-
-SECRET_KEY = "this_is_my_super_secret_key"
-ALGORITHM = "HS256"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
