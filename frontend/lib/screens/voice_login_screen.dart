@@ -137,7 +137,7 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
       audioPath: _audioPath!,
       passphrase: _challengePhrase.replaceAll('"', ''),
     ).timeout(
-      const Duration(seconds: 15),
+      const Duration(seconds: 30),
       onTimeout: () => {
         'success': false,
         'message': 'Verification timed out — please try again'
@@ -146,6 +146,12 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
 
     print('=== VOICE LOGIN RESULT ===');
     print(result);
+
+    // Print fake probability for Mahmoud's threshold calibration
+    if (result['data'] != null &&
+        result['data']['fake_probability'] != null) {
+      print('Fake probability: ${result['data']['fake_probability']}');
+    }
 
     if (mounted) {
       setState(() => _isVerifying = false);
@@ -162,20 +168,41 @@ class _VoiceLoginScreenState extends State<VoiceLoginScreen>
               (route) => false,
         );
       } else {
-        String errorMessage = result['message'] ?? 'Voice not recognized';
+        final message = result['message']?.toString() ?? 'Voice not recognized';
+        String displayMessage;
 
-// Show friendly message for phrase mismatch
-        if (errorMessage.toLowerCase().contains('phrase')) {
-          errorMessage = 'We didn\'t catch that — please read the phrase clearly and try again.';
+        if (message.toLowerCase().contains('synthetic') ||
+            message.toLowerCase().contains('spoofed')) {
+          // Deepfake detection triggered
+          displayMessage =
+          'Synthetic voice detected. Please speak naturally into the microphone — recorded or AI-generated voices are not accepted.';
+        } else if (message.toLowerCase().contains('phrase') ||
+            message.toLowerCase().contains('match')) {
+          // Wrong phrase spoken
+          displayMessage =
+          'We didn\'t catch that — please read the phrase clearly and try again.';
+        } else if (message.toLowerCase().contains('silent') ||
+            message.toLowerCase().contains('no voice')) {
+          // Silent recording
+          displayMessage = 'No voice detected. Please speak louder.';
+        } else if (message.toLowerCase().contains('timed out')) {
+          // Timeout
+          displayMessage = 'Verification timed out — please try again.';
+        } else {
+          // Generic fallback
+          displayMessage = message.isNotEmpty
+              ? message
+              : 'Voice not recognized. Please try again.';
         }
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
+            content: Text(displayMessage),
             backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 5),
           ),
         );
+
         setState(() {
           _isRecording = false;
           _audioPath = null;

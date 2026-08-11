@@ -109,13 +109,11 @@ class ApiService {
     }
   }
 
-  // ── Upload Voice Profile (5 recordings) ───────────────
-  Future<Map<String, dynamic>> uploadVoiceProfile5({
+  // ── Upload Voice Profile (3 recordings) ───────────────
+  Future<Map<String, dynamic>> uploadVoiceProfile3({
     required String audioPath1,
     required String audioPath2,
     required String audioPath3,
-    required String audioPath4,
-    required String audioPath5,
     String passphrase = 'my voice is my password',
   }) async {
     try {
@@ -133,14 +131,6 @@ class ApiService {
           audioPath3,
           filename: 'voice3.wav',
         ),
-        'audio4': await MultipartFile.fromFile(
-          audioPath4,
-          filename: 'voice4.wav',
-        ),
-        'audio5': await MultipartFile.fromFile(
-          audioPath5,
-          filename: 'voice5.wav',
-        ),
       });
 
       final response = await _dio.post(
@@ -151,7 +141,7 @@ class ApiService {
 
       return {'success': true, 'data': response.data};
     } on DioException catch (e) {
-      print('=== VOICE UPLOAD 5 ERROR ===');
+      print('=== VOICE UPLOAD 3 ERROR ===');
       print('Status: ${e.response?.statusCode}');
       print('Data: ${e.response?.data}');
       return {
@@ -169,7 +159,8 @@ class ApiService {
     } on DioException catch (e) {
       return {
         'success': false,
-        'message': e.response?.data?['detail'] ?? 'Failed to get challenge'
+        'message':
+        e.response?.data?['detail'] ?? 'Failed to get challenge'
       };
     }
   }
@@ -180,10 +171,7 @@ class ApiService {
     required String passphrase,
   }) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
       print('=== VERIFY VOICE ===');
-      print('Token: $token');
 
       final formData = FormData.fromMap({
         'audio': await MultipartFile.fromFile(
@@ -199,6 +187,14 @@ class ApiService {
         options: Options(contentType: 'multipart/form-data'),
       );
 
+      print('=== VERIFY VOICE RESPONSE ===');
+      print(response.data);
+
+      // Print fake probability for Mahmoud's calibration
+      if (response.data['fake_probability'] != null) {
+        print('Fake probability: ${response.data['fake_probability']}');
+      }
+
       return {'success': true, 'data': response.data};
     } on DioException catch (e) {
       print('=== VOICE VERIFY ERROR ===');
@@ -206,7 +202,8 @@ class ApiService {
       print('Data: ${e.response?.data}');
       return {
         'success': false,
-        'message': e.response?.data?['detail'] ?? 'Voice verification failed'
+        'message':
+        e.response?.data?['detail'] ?? 'Voice verification failed'
       };
     }
   }
@@ -241,6 +238,14 @@ class ApiService {
         options: Options(contentType: 'multipart/form-data'),
       );
 
+      print('=== VOICE LOGIN RESPONSE ===');
+      print(response.data);
+
+      // Print fake probability for Mahmoud's calibration
+      if (response.data['fake_probability'] != null) {
+        print('Fake probability: ${response.data['fake_probability']}');
+      }
+
       if (response.data['access_token'] != null) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', response.data['access_token']);
@@ -253,7 +258,8 @@ class ApiService {
       print('Data: ${e.response?.data}');
       return {
         'success': false,
-        'message': e.response?.data?['detail'] ?? 'Voice not recognized'
+        'message':
+        e.response?.data?['detail'] ?? 'Voice not recognized'
       };
     }
   }

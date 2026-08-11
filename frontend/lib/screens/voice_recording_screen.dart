@@ -26,6 +26,8 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   final List<String> _audioPaths = [];
   double _audioLevel = 0.0;
   bool _isSilent = false;
+  int? _failedRecordingIndex;
+  bool _isRedoMode = false;
 
   late AnimationController _waveCtrl;
   late Animation<double> _waveAnim;
@@ -86,36 +88,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
       });
     }
 
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // Warm up mic on first recording only
-    if (_currentRecording == 1) {
-      final warmupPath =
-          '${dir.path}/warmup_${DateTime.now().millisecondsSinceEpoch}.wav';
-
-      await _recorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.wav,
-          sampleRate: 16000,
-          numChannels: 1,
-        ),
-        path: warmupPath,
-      );
-
-      await Future.delayed(const Duration(milliseconds: 800));
-      await _recorder.stop();
-
-      try {
-        final f = File(warmupPath);
-        if (await f.exists()) await f.delete();
-      } catch (e) {
-        print('Warmup cleanup: $e');
-      }
-
-      await Future.delayed(const Duration(milliseconds: 200));
-    }
-
-    // Start real recording
+    // Start recording immediately
     await _recorder.start(
       const RecordConfig(
         encoder: AudioEncoder.wav,
@@ -142,12 +115,17 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
       }
     });
 
-    // Check for silence on ALL recordings after 2 seconds
-    await Future.delayed(const Duration(seconds: 2));
+    // Run full countdown from 5 to 0
+    for (int i = 4; i >= 0; i--) {
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+      setState(() => _secondsLeft = i);
+    }
 
+    await _recorder.stop();
+
+    // After full 5 seconds — check if any sound was detected
     if (!hadSound && mounted) {
-      await _recorder.stop();
-
       try {
         final f = File(audioPath);
         if (await f.exists()) await f.delete();
@@ -186,28 +164,34 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
       return;
     }
 
-    // Sound detected — finish remaining 3 seconds
-    for (int i = 2; i >= 0; i--) {
-      await Future.delayed(const Duration(seconds: 1));
-      if (!mounted) return;
-      setState(() => _secondsLeft = i);
-    }
-
-    await _recorder.stop();
-
+    // Sound detected — save recording
     if (mounted) {
       setState(() {
         _audioLevel = 0.0;
         _isSilent = false;
+        _isRecording = false;
       });
     }
 
-    _audioPaths.add(audioPath);
+    // Insert at correct position if in redo mode
+    if (_isRedoMode) {
+      _audioPaths.insert(_currentRecording - 1, audioPath);
+    } else {
+      _audioPaths.add(audioPath);
+    }
 
     if (mounted) {
-      setState(() => _isRecording = false);
-
-      if (_currentRecording < 5) {
+      if (_isRedoMode) {
+        // Redo mode — go straight to upload after one recording
+        setState(() => _isRedoMode = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recording replaced! Uploading...'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        await _uploadVoice();
+      } else if (_currentRecording < 3) {
         setState(() => _currentRecording++);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -226,12 +210,10 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     setState(() => _isUploading = true);
 
     final api = ApiService();
-    final result = await api.uploadVoiceProfile5(
+    final result = await api.uploadVoiceProfile3(
       audioPath1: _audioPaths[0],
       audioPath2: _audioPaths[1],
       audioPath3: _audioPaths[2],
-      audioPath4: _audioPaths[3],
-      audioPath5: _audioPaths[4],
     ).timeout(
       const Duration(seconds: 120),
       onTimeout: () => {
@@ -256,11 +238,25 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           ),
         );
       } else {
+        final message = result['message'].toString();
+
+        // Detect which specific recording failed
+        // Matches Mahmoud's exact format:
+        // "Recording 2 sounds inconsistent with your other recordings..."
+        int? failedIndex;
+        final match = RegExp(r'Recording (\d+) sounds inconsistent')
+            .firstMatch(message);
+        if (match != null) {
+          failedIndex = int.tryParse(match.group(1) ?? '');
+        }
+
+        setState(() => _failedRecordingIndex = failedIndex);
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              result['message'].toString().isNotEmpty
-                  ? result['message']
+              message.isNotEmpty
+                  ? message
                   : 'Server error — please try again',
             ),
             backgroundColor: AppColors.error,
@@ -301,7 +297,46 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
       _secondsLeft = 5;
       _audioLevel = 0.0;
       _isSilent = false;
+      _failedRecordingIndex = null;
+      _isRedoMode = false;
       _audioPaths.clear();
+    });
+  }
+
+  Future<void> _redoRecording(int recordingNumber) async {
+    // Stop recorder completely
+    try {
+      final isRec = await _recorder.isRecording();
+      if (isRec) await _recorder.stop();
+    } catch (e) {
+      print('Recorder stop error: $e');
+    }
+
+    // Delete the failed audio file
+    if (_audioPaths.length >= recordingNumber) {
+      final failedPath = _audioPaths[recordingNumber - 1];
+      try {
+        final f = File(failedPath);
+        if (await f.exists()) await f.delete();
+      } catch (e) {
+        print('Delete failed recording: $e');
+      }
+      _audioPaths.removeAt(recordingNumber - 1);
+    }
+
+    // Small delay to let recorder reset properly
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    setState(() {
+      _isDone = false;
+      _isUploading = false;
+      _uploadSuccess = false;
+      _failedRecordingIndex = null;
+      _currentRecording = recordingNumber;
+      _secondsLeft = 5;
+      _audioLevel = 0.0;
+      _isSilent = false;
+      _isRedoMode = true;
     });
   }
 
@@ -318,7 +353,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           ScreenHeader(
             title: isEnroll ? 'Voice Enrollment' : 'Voice Verification',
             subtitle: isEnroll
-                ? 'Record your voice 5 times to create a strong voiceprint.'
+                ? 'Record your voice 3 times to create a strong voiceprint.'
                 : 'Speak to verify your identity.',
           ),
           const SizedBox(height: 24),
@@ -327,6 +362,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
             _RecordingProgress(
               current: _currentRecording,
               completed: _audioPaths.length,
+              isRedoMode: _isRedoMode,
             ),
             const SizedBox(height: 24),
           ],
@@ -364,7 +400,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Speak clearly in a quiet environment',
+                  'Read this phrase aloud clearly when recording',
                   style: TextStyle(
                     color: AppColors.textHint,
                     fontSize: 12,
@@ -403,7 +439,10 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                 ? _DoneState(
               isEnroll: isEnroll,
               uploadSuccess: _uploadSuccess,
+              failedRecordingIndex: _failedRecordingIndex,
               onRetry: () async => await _resetRecording(),
+              onRedoRecording: (index) async =>
+              await _redoRecording(index),
             )
                 : _RecordButton(
               isRecording: _isRecording,
@@ -412,6 +451,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
               waveAnim: _waveAnim,
               audioLevel: _audioLevel,
               isSilent: _isSilent,
+              isRedoMode: _isRedoMode,
               onTap: _isRecording ? null : _startRecording,
             ),
           ),
@@ -463,10 +503,12 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
 class _RecordingProgress extends StatelessWidget {
   final int current;
   final int completed;
+  final bool isRedoMode;
 
   const _RecordingProgress({
     required this.current,
     required this.completed,
+    required this.isRedoMode,
   });
 
   @override
@@ -478,7 +520,9 @@ class _RecordingProgress extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Recording $current of 5',
+              isRedoMode
+                  ? 'Re-recording #$current'
+                  : 'Recording $current of 3',
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
@@ -486,9 +530,9 @@ class _RecordingProgress extends StatelessWidget {
               ),
             ),
             Text(
-              '$completed/5 complete',
-              style: const TextStyle(
-                color: AppColors.accent,
+              isRedoMode ? 'Fixing recording $current' : '$completed/3 complete',
+              style: TextStyle(
+                color: isRedoMode ? AppColors.error : AppColors.accent,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -497,16 +541,19 @@ class _RecordingProgress extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Row(
-          children: List.generate(5, (i) {
+          children: List.generate(3, (i) {
             final isDone = i < completed;
-            final isCurrent = i == completed;
+            final isCurrent = i == (current - 1);
+            final isRedo = isRedoMode && isCurrent;
             return Expanded(
               child: Container(
                 margin: const EdgeInsets.only(right: 6),
                 height: 6,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(3),
-                  color: isDone
+                  color: isRedo
+                      ? AppColors.error
+                      : isDone
                       ? AppColors.success
                       : isCurrent
                       ? AppColors.accent
@@ -529,6 +576,7 @@ class _RecordButton extends StatelessWidget {
   final Animation<double> waveAnim;
   final double audioLevel;
   final bool isSilent;
+  final bool isRedoMode;
   final VoidCallback? onTap;
 
   const _RecordButton({
@@ -538,6 +586,7 @@ class _RecordButton extends StatelessWidget {
     required this.waveAnim,
     required this.audioLevel,
     required this.isSilent,
+    required this.isRedoMode,
     this.onTap,
   });
 
@@ -583,6 +632,8 @@ class _RecordButton extends StatelessWidget {
                     border: Border.all(
                       color: isRecording
                           ? AppColors.accent
+                          : isRedoMode
+                          ? AppColors.error
                           : AppColors.border,
                       width: 2,
                     ),
@@ -608,8 +659,15 @@ class _RecordButton extends StatelessWidget {
                       ),
                     ),
                   )
-                      : const Icon(Icons.mic_none_rounded,
-                      color: AppColors.textSecondary, size: 40),
+                      : Icon(
+                    isRedoMode
+                        ? Icons.mic_none_rounded
+                        : Icons.mic_none_rounded,
+                    color: isRedoMode
+                        ? AppColors.error
+                        : AppColors.textSecondary,
+                    size: 40,
+                  ),
                 ),
               ],
             ),
@@ -657,13 +715,28 @@ class _RecordButton extends StatelessWidget {
                 ),
             ] else ...[
               Text(
-                'Tap to record #$recordingNumber',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
+                isRedoMode
+                    ? 'Tap to re-record #$recordingNumber'
+                    : 'Tap to record #$recordingNumber',
+                style: TextStyle(
+                  color: isRedoMode
+                      ? AppColors.error
+                      : AppColors.textSecondary,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (isRedoMode)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Only this recording will be replaced',
+                    style: TextStyle(
+                      color: AppColors.textHint,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
             ],
           ],
         ),
@@ -708,12 +781,16 @@ class _AudioLevelBars extends StatelessWidget {
 class _DoneState extends StatelessWidget {
   final bool isEnroll;
   final bool uploadSuccess;
+  final int? failedRecordingIndex;
   final Future<void> Function() onRetry;
+  final Future<void> Function(int)? onRedoRecording;
 
   const _DoneState({
     required this.isEnroll,
     required this.uploadSuccess,
     required this.onRetry,
+    this.failedRecordingIndex,
+    this.onRedoRecording,
   });
 
   @override
@@ -758,7 +835,9 @@ class _DoneState extends StatelessWidget {
               ? isEnroll
               ? 'Your voiceprint has been saved'
               : 'Identity confirmed successfully'
-              : 'One of your recordings was inconsistent.\nTap Try Again to re-record all 5.',
+              : failedRecordingIndex != null
+              ? 'Recording $failedRecordingIndex was inconsistent.\nPlease redo only that recording.'
+              : 'One of your recordings was inconsistent.\nTap Try Again to re-record all 3.',
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: AppColors.textSecondary,
@@ -771,6 +850,24 @@ class _DoneState extends StatelessWidget {
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
             child: Text(isEnroll ? 'Continue' : 'Done'),
+          )
+        else if (failedRecordingIndex != null && onRedoRecording != null)
+          Column(
+            children: [
+              ElevatedButton(
+                onPressed: () async =>
+                await onRedoRecording!(failedRecordingIndex!),
+                child: Text('Redo Recording $failedRecordingIndex'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () async => await onRetry(),
+                child: const Text(
+                  'Start over — redo all 3',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+            ],
           )
         else
           ElevatedButton(
