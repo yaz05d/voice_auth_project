@@ -12,6 +12,15 @@ class UserLogin(BaseModel):
     password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordConfirmRequest(BaseModel):
+    reset_token: str
+    new_password: str
+
+
 class VoiceProfileCreate(BaseModel):
     passphrase: str
     audio_path: str | None = None

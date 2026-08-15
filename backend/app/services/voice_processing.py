@@ -34,10 +34,13 @@ SIMILARITY_THRESHOLD = 0.45
 # not unique enough (guards against two users scoring near-identically).
 UNIQUENESS_MARGIN = 0.05
 
-# During enrollment, each of the 5 recordings must be at least this similar
-# to the centroid of the OTHER 4, or it's flagged as an inconsistent/bad take.
-# Looser than SIMILARITY_THRESHOLD on purpose: this only screens out clearly
-# bad recordings (wrong speaker, heavy noise, mic bump), not natural variation.
+# During enrollment, each recording must be at least this similar to the
+# centroid of the OTHER takes (3 takes as of 2026-08-03, previously 5), or
+# it's flagged as an inconsistent/bad take. Looser than SIMILARITY_THRESHOLD
+# on purpose: this only screens out clearly bad recordings (wrong speaker,
+# heavy noise, mic bump), not natural variation. NOTE: with only 2 "other"
+# takes to build a centroid from (vs. 4 previously), this check is noisier
+# than when it was tuned - not re-validated against real 3-take data yet.
 ENROLLMENT_CONSISTENCY_THRESHOLD = 0.75
 
 # Clips shorter than this are rejected before feature extraction. ECAPA-TDNN
@@ -132,9 +135,9 @@ def compute_centroid(embeddings):
 def find_inconsistent_recording(embeddings, min_similarity=ENROLLMENT_CONSISTENCY_THRESHOLD):
 
     """
-    Leave-one-out consistency check across the 5 enrollment embeddings.
+    Leave-one-out consistency check across the enrollment embeddings.
 
-    For each embedding, compares it against the centroid of the OTHER 4
+    For each embedding, compares it against the centroid of the OTHER takes
     (not itself, to avoid the check being biased by the very sample it's
     checking). Returns the 1-based index of the first recording that
     doesn't sound like the rest of the set (bad take, background noise,

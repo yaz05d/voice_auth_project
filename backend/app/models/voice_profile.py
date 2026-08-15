@@ -29,7 +29,10 @@ class VoiceProfile(Base):
 
 
     # ==================================
-    # Store 5 voice embeddings
+    # Store up to 5 voice embeddings. Enrollment only records 3 takes
+    # (see /voice-profile), so embedding4/5 are unused going forward and
+    # stay nullable - kept as columns rather than dropped so existing
+    # profiles enrolled with 5 takes keep all their data.
     # ==================================
 
     voice_embedding1 = Column(
@@ -49,12 +52,12 @@ class VoiceProfile(Base):
 
     voice_embedding4 = Column(
         String,
-        nullable=False
+        nullable=True
     )
 
     voice_embedding5 = Column(
         String,
-        nullable=False
+        nullable=True
     )
 
 

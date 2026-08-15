@@ -9,6 +9,7 @@ from app.database.connection import engine, Base
 
 from app.routes.users import router as user_router
 from app.routes.voice_profile import router as voice_profile_router
+from app.routes.password_reset import router as password_reset_router
 
 
 Base.metadata.create_all(bind=engine)
@@ -54,6 +55,16 @@ app.include_router(
 app.include_router(
     voice_profile_router,
     tags=["Voice Profile"]
+)
+
+
+# Password reset:
+# /forgot-password
+# /reset-password/verify-voice
+# /reset-password/confirm
+app.include_router(
+    password_reset_router,
+    tags=["Password Reset"]
 )
 
 

@@ -1,4 +1,13 @@
 from app.services.challenge_generator import generate_challenge
+
+# spoof_detection (transformers) must import before voice_processing
+# (speechbrain): speechbrain registers a lazy stub for its optional k2_fsa
+# integration, and transformers' torch.distributed import chain later does a
+# stack introspection that touches every loaded module - including that
+# stub - which forces a real import of the (uninstalled) optional k2
+# package and crashes. Importing transformers first avoids ever touching
+# the stub during that introspection.
+from app.services.spoof_detection import check_not_spoofed
 from app.services.voice_processing import (
     extract_features,
     compare_voice,
@@ -64,8 +73,6 @@ async def create_voice_profile(
     audio1: UploadFile = File(...),
     audio2: UploadFile = File(...),
     audio3: UploadFile = File(...),
-    audio4: UploadFile = File(...),
-    audio5: UploadFile = File(...),
 
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -93,7 +100,7 @@ async def create_voice_profile(
 
 
     # ==========================
-    # Save 5 recordings
+    # Save 3 recordings
     # ==========================
 
     files = []
@@ -101,9 +108,7 @@ async def create_voice_profile(
     audios = [
         audio1,
         audio2,
-        audio3,
-        audio4,
-        audio5
+        audio3
     ]
 
 
@@ -131,11 +136,11 @@ async def create_voice_profile(
         files.append(file_path)
 
 
-    print("5 voice recordings saved")
+    print("3 voice recordings saved")
 
 
     # ==========================
-    # Extract 5 embeddings
+    # Extract 3 embeddings
     # ==========================
 
     raw_embeddings = []
@@ -153,7 +158,7 @@ async def create_voice_profile(
 
 
     # ==========================
-    # Check the 5 recordings sound like the same speaker
+    # Check the 3 recordings sound like the same speaker
     # ==========================
 
     inconsistent_index = find_inconsistent_recording(raw_embeddings)
@@ -190,11 +195,7 @@ async def create_voice_profile(
 
         voice_embedding2=embeddings[1],
 
-        voice_embedding3=embeddings[2],
-
-        voice_embedding4=embeddings[3],
-
-        voice_embedding5=embeddings[4]
+        voice_embedding3=embeddings[2]
 
     )
 
@@ -265,15 +266,32 @@ async def verify_voice(
         )
 
 
+    is_real, fake_probability = check_not_spoofed(temp_path)
+
+    print("Spoof check - is_real:", is_real, "fake_probability:", fake_probability)
+
+    if not is_real:
+        raise HTTPException(
+            status_code=401,
+            detail="Recording appears to be synthetic or spoofed audio"
+        )
+
+
     new_features = extract_features(temp_path)
 
 
+    raw_embeddings = [
+        profile.voice_embedding1,
+        profile.voice_embedding2,
+        profile.voice_embedding3,
+        profile.voice_embedding4,
+        profile.voice_embedding5,
+    ]
+
     stored_embeddings = [
-        np.array(json.loads(profile.voice_embedding1)),
-        np.array(json.loads(profile.voice_embedding2)),
-        np.array(json.loads(profile.voice_embedding3)),
-        np.array(json.loads(profile.voice_embedding4)),
-        np.array(json.loads(profile.voice_embedding5)),
+        np.array(json.loads(embedding))
+        for embedding in raw_embeddings
+        if embedding is not None
     ]
 
     centroid = compute_centroid(stored_embeddings)
@@ -295,7 +313,9 @@ async def verify_voice(
 
         "verified": verified,
 
-        "similarity": similarity
+        "similarity": similarity,
+
+        "fake_probability": fake_probability
 
     }
 @router.post("/voice/login")
@@ -337,6 +357,16 @@ async def voice_login(
         raise HTTPException(
             status_code=400,
             detail="No voice detected in recording"
+        )
+
+    is_real, fake_probability = check_not_spoofed(temp_path)
+
+    print("Spoof check - is_real:", is_real, "fake_probability:", fake_probability)
+
+    if not is_real:
+        raise HTTPException(
+            status_code=401,
+            detail="Recording appears to be synthetic or spoofed audio"
         )
 
     # Confirm the challenge phrase was actually spoken in this audio (not just
