@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
-import 'forgot_password_screen.dart';
 import 'login_screen.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
@@ -47,7 +46,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       return;
     }
     setState(() => _isLoading = true);
-    // TODO: call reset password API when Mahmoud builds it
+    // TODO: call reset password API for SMS method
     await Future.delayed(const Duration(seconds: 2));
     if (mounted) {
       setState(() {
@@ -78,60 +77,28 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           ] else ...[
             const ScreenHeader(
               title: 'Reset Password',
-              subtitle: 'Set your new password below.',
+              subtitle: 'Enter the SMS code and set your new password.',
             ),
             const SizedBox(height: 24),
 
-            // ── Voice method — show confirmed badge ──
-            if (widget.method == RecoveryMethod.voice) ...[
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: AppColors.success.withOpacity(0.3)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.check_circle_rounded,
-                        color: AppColors.success, size: 18),
-                    SizedBox(width: 10),
-                    Text(
-                      'Identity confirmed via voice biometrics',
-                      style: TextStyle(
-                        color: AppColors.success,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+            // SMS code input
+            _OtpInput(
+              controller: _codeCtrl,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton(
+                onPressed: () {},
+                child: const Text(
+                  'Resend code',
+                  style: TextStyle(
+                      color: AppColors.textSecondary, fontSize: 13),
                 ),
               ),
-              const SizedBox(height: 24),
-            ],
+            ),
+            const SizedBox(height: 24),
 
-            // ── SMS code method ──
-            if (widget.method == RecoveryMethod.email) ...[
-              _OtpInput(
-                controller: _codeCtrl,
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: TextButton(
-                  onPressed: () {},
-                  child: const Text(
-                    'Resend code',
-                    style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 13),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-
-            // ── New password fields ──
             const Text(
               'SET NEW PASSWORD',
               style: TextStyle(
@@ -277,3 +244,6 @@ class _SuccessView extends StatelessWidget {
     );
   }
 }
+
+// ─── Recovery Method Enum ──────────────────────────────────────────
+enum RecoveryMethod { voice, email }

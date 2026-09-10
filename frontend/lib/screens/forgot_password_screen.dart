@@ -1,25 +1,82 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
+import '../services/api_service.dart';
 import 'voice_recovery_screen.dart';
 import 'reset_password_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
-  const ForgotPasswordScreen({super.key});
+  final String prefillEmail;
+  const ForgotPasswordScreen({super.key, this.prefillEmail = ''});
 
   @override
   State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   bool _isLoading = false;
   bool _codeSent = false;
 
   @override
+  void initState() {
+    super.initState();
+    _emailCtrl.text = widget.prefillEmail;
+  }
+
+  @override
   void dispose() {
+    _emailCtrl.dispose();
     _phoneCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleVoiceRecovery() async {
+    if (_emailCtrl.text.isEmpty || !_emailCtrl.text.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your email address first'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    final api = ApiService();
+    final result = await api.forgotPassword(
+      email: _emailCtrl.text.trim(),
+    );
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+
+      if (result['success']) {
+        final phrase = result['data']['phrase'] ?? '';
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VoiceRecoveryScreen(
+              email: _emailCtrl.text.trim(),
+              phrase: phrase,
+            ),
+          ),
+        );
+      } else {
+        // Generic message — don't reveal if email exists
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'If this email is registered, you will receive a recovery phrase.'),
+            backgroundColor: AppColors.accent,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleSendCode() async {
@@ -53,10 +110,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           const SizedBox(height: 12),
           const ScreenHeader(
             title: 'Recover access',
-            subtitle:
-            'Verify your identity to reset your password.',
+            subtitle: 'Verify your identity to reset your password.',
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+
+          // Email field — always shown
+          AppTextField(
+            label: 'EMAIL ADDRESS',
+            hint: 'Enter your registered email',
+            controller: _emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            prefixIcon: Icons.mail_outline_rounded,
+          ),
+          const SizedBox(height: 24),
 
           const Text(
             'RECOVERY METHOD',
@@ -70,19 +136,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           const SizedBox(height: 12),
 
           // Voice Recovery
-          _RecoveryOption(
+          _isLoading
+              ? const Center(
+            child:
+            CircularProgressIndicator(color: AppColors.accent),
+          )
+              : _RecoveryOption(
             icon: Icons.mic_rounded,
             title: 'Voice Biometric Recovery',
-            subtitle: 'Verify it\'s you using your enrolled voiceprint',
+            subtitle:
+            'Verify it\'s you using your enrolled voiceprint',
             isRecommended: true,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const VoiceRecoveryScreen(),
-                ),
-              );
-            },
+            onTap: _handleVoiceRecovery,
           ),
           const SizedBox(height: 12),
 
@@ -150,7 +215,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         context,
                         MaterialPageRoute(
                           builder: (_) => const ResetPasswordScreen(
-                              method: RecoveryMethod.email),
+                            method: RecoveryMethod.email,
+                          ),
                         ),
                       );
                     },
@@ -163,9 +229,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             Center(
               child: TextButton(
                 onPressed: () => setState(() => _codeSent = false),
-                child: const Text('Resend code',
-                    style:
-                    TextStyle(color: AppColors.textSecondary)),
+                child: const Text(
+                  'Resend code',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
               ),
             ),
           ],
@@ -282,8 +349,7 @@ class _RecoveryOption extends StatelessWidget {
             ),
             Icon(
               Icons.arrow_forward_ios_rounded,
-              color:
-              isRecommended ? AppColors.accent : AppColors.textHint,
+              color: isRecommended ? AppColors.accent : AppColors.textHint,
               size: 14,
             ),
           ],
@@ -292,5 +358,3 @@ class _RecoveryOption extends StatelessWidget {
     );
   }
 }
-
-enum RecoveryMethod { voice, email }

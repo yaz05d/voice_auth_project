@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.1.141:8000';
+  static const String baseUrl = 'http://192.168.1.26:8000';
 
   final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
@@ -260,6 +260,121 @@ class ApiService {
         'success': false,
         'message':
         e.response?.data?['detail'] ?? 'Voice not recognized'
+      };
+    }
+  }
+  // ── Forgot Password — Get Phrase ───────────────────────
+  Future<Map<String, dynamic>> forgotPassword({
+    required String email,
+  }) async {
+    try {
+      print('=== FORGOT PASSWORD REQUEST ===');
+      final dio = Dio(BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+      ));
+
+      final response = await dio.post(
+        '/forgot-password',
+        data: {'email': email},
+        options: Options(contentType: 'application/json'),
+      );
+
+      print('=== FORGOT PASSWORD SUCCESS ===');
+      print(response.data);
+
+      return {'success': true, 'data': response.data};
+    } on DioException catch (e) {
+      print('=== FORGOT PASSWORD ERROR ===');
+      print('Status: ${e.response?.statusCode}');
+      print('Data: ${e.response?.data}');
+      return {
+        'success': false,
+        'message': e.response?.data?['detail'] ??
+            'Something went wrong. Please try again.'
+      };
+    }
+  }
+
+// ── Reset Password — Verify Voice ─────────────────────
+  Future<Map<String, dynamic>> resetPasswordVerifyVoice({
+    required String email,
+    required String phrase,
+    required String audioPath,
+  }) async {
+    try {
+      print('=== RESET PASSWORD VERIFY VOICE ===');
+
+      final formData = FormData.fromMap({
+        'email': email,
+        'phrase': phrase,
+        'audio': await MultipartFile.fromFile(
+          audioPath,
+          filename: 'voice_reset.wav',
+        ),
+      });
+
+      final dio = Dio(BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+      ));
+
+      final response = await dio.post(
+        '/reset-password/verify-voice',
+        data: formData,
+        options: Options(contentType: 'multipart/form-data'),
+      );
+
+      print('=== RESET VERIFY SUCCESS ===');
+      print(response.data);
+
+      return {'success': true, 'data': response.data};
+    } on DioException catch (e) {
+      print('=== RESET VERIFY ERROR ===');
+      print('Status: ${e.response?.statusCode}');
+      print('Data: ${e.response?.data}');
+      return {
+        'success': false,
+        'message': 'Voice verification failed'
+      };
+    }
+  }
+
+// ── Reset Password — Confirm New Password ─────────────
+  Future<Map<String, dynamic>> resetPasswordConfirm({
+    required String resetToken,
+    required String newPassword,
+  }) async {
+    try {
+      print('=== RESET PASSWORD CONFIRM ===');
+
+      final dio = Dio(BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+      ));
+
+      final response = await dio.post(
+        '/reset-password/confirm',
+        data: {
+          'reset_token': resetToken,
+          'new_password': newPassword,
+        },
+        options: Options(contentType: 'application/json'),
+      );
+
+      print('=== RESET PASSWORD SUCCESS ===');
+      return {'success': true, 'data': response.data};
+    } on DioException catch (e) {
+      print('=== RESET PASSWORD ERROR ===');
+      print('Status: ${e.response?.statusCode}');
+      print('Data: ${e.response?.data}');
+      return {
+        'success': false,
+        'message': e.response?.data?['detail'] ??
+            'Password reset failed. Please try again.'
       };
     }
   }

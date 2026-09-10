@@ -164,7 +164,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const ForgotPasswordScreen()),
+                      builder: (_) => ForgotPasswordScreen(
+                        prefillEmail: _emailCtrl.text.trim(),
+                      ),
+                    ),
                   );
                 },
                 style: TextButton.styleFrom(

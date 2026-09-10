@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -5,11 +6,17 @@ import 'package:record/record.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
 import '../services/api_service.dart';
-import 'reset_password_screen.dart';
-import 'forgot_password_screen.dart';
+import 'new_password_screen.dart';
 
 class VoiceRecoveryScreen extends StatefulWidget {
-  const VoiceRecoveryScreen({super.key});
+  final String email;
+  final String phrase;
+
+  const VoiceRecoveryScreen({
+    super.key,
+    required this.email,
+    required this.phrase,
+  });
 
   @override
   State<VoiceRecoveryScreen> createState() => _VoiceRecoveryScreenState();
@@ -18,13 +25,9 @@ class VoiceRecoveryScreen extends StatefulWidget {
 class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
     with TickerProviderStateMixin {
   bool _isRecording = false;
-  bool _isDone = false;
   bool _isVerifying = false;
-  bool _verifySuccess = false;
-  bool _isLoadingChallenge = true;
   int _secondsLeft = 5;
   String? _audioPath;
-  String _challengePhrase = '"My voice is my password"';
 
   late AnimationController _waveCtrl;
   late Animation<double> _waveAnim;
@@ -36,27 +39,8 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
     _waveCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600))
       ..repeat(reverse: true);
-    _waveAnim = Tween<double>(begin: 0.4, end: 1.0)
-        .animate(CurvedAnimation(parent: _waveCtrl, curve: Curves.easeInOut));
-    _loadChallenge();
-  }
-
-  Future<void> _loadChallenge() async {
-    final api = ApiService();
-    final result = await api.getVoiceChallenge();
-    if (mounted) {
-      setState(() {
-        _isLoadingChallenge = false;
-        if (result['success']) {
-          final data = result['data'];
-          if (data is Map && data.containsKey('phrase')) {
-            _challengePhrase = '"${data['phrase']}"';
-          } else if (data is String) {
-            _challengePhrase = '"$data"';
-          }
-        }
-      });
-    }
+    _waveAnim = Tween<double>(begin: 0.4, end: 1.0).animate(
+        CurvedAnimation(parent: _waveCtrl, curve: Curves.easeInOut));
   }
 
   @override
@@ -81,7 +65,8 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
     }
 
     final dir = await getApplicationDocumentsDirectory();
-    _audioPath = '${dir.path}/voice_recovery.wav';
+    _audioPath =
+    '${dir.path}/voice_reset_${DateTime.now().millisecondsSinceEpoch}.wav';
 
     if (mounted) {
       setState(() {
@@ -89,8 +74,6 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
         _secondsLeft = 5;
       });
     }
-
-    await Future.delayed(const Duration(milliseconds: 100));
 
     await _recorder.start(
       const RecordConfig(
@@ -110,10 +93,7 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
     await _recorder.stop();
 
     if (mounted) {
-      setState(() {
-        _isRecording = false;
-        _isDone = true;
-      });
+      setState(() => _isRecording = false);
       await _verifyVoice();
     }
   }
@@ -123,9 +103,10 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
     setState(() => _isVerifying = true);
 
     final api = ApiService();
-    final result = await api.verifyVoice(
+    final result = await api.resetPasswordVerifyVoice(
+      email: widget.email,
+      phrase: widget.phrase,
       audioPath: _audioPath!,
-      passphrase: _challengePhrase.replaceAll('"', ''),
     ).timeout(
       const Duration(seconds: 30),
       onTimeout: () => {
@@ -137,87 +118,43 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
     print('=== VOICE RECOVERY RESULT ===');
     print(result);
 
-    // Print fake probability for Mahmoud's threshold calibration
-    if (result['data'] != null &&
-        result['data']['fake_probability'] != null) {
-      print('Fake probability: ${result['data']['fake_probability']}');
-    }
-
     if (mounted) {
-      setState(() {
-        _isVerifying = false;
-        _verifySuccess = result['success'];
-      });
+      setState(() => _isVerifying = false);
 
       if (result['success']) {
+        final resetToken = result['data']['reset_token'] ?? '';
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Identity confirmed! Set your new password.'),
             backgroundColor: AppColors.success,
           ),
         );
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => const ResetPasswordScreen(
-              method: RecoveryMethod.voice,
-            ),
+            builder: (_) => NewPasswordScreen(resetToken: resetToken),
           ),
         );
       } else {
-        final message = result['message']?.toString() ?? 'Voice not recognized';
-        String displayMessage;
-
-        if (message.toLowerCase().contains('synthetic') ||
-            message.toLowerCase().contains('spoofed')) {
-          // Deepfake detection triggered
-          displayMessage =
-          'Synthetic voice detected. Please speak naturally into the microphone — recorded or AI-generated voices are not accepted.';
-        } else if (message.toLowerCase().contains('phrase') ||
-            message.toLowerCase().contains('match')) {
-          // Wrong phrase spoken
-          displayMessage =
-          'Phrase didn\'t match. Please read the phrase clearly and try again.';
-        } else if (message.toLowerCase().contains('silent') ||
-            message.toLowerCase().contains('no voice')) {
-          // Silent recording
-          displayMessage = 'No voice detected. Please speak louder.';
-        } else if (message.toLowerCase().contains('timed out')) {
-          // Timeout
-          displayMessage = 'Verification timed out — please try again.';
-        } else {
-          // Generic fallback
-          displayMessage = message.isNotEmpty
-              ? message
-              : 'Voice not recognized. Please try again.';
-        }
-
+        // Generic error — as Mahmoud requested
+        // Don't reveal which part failed
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(displayMessage),
+          const SnackBar(
+            content: Text('Voice verification failed. Please try again.'),
             backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 5),
+            duration: Duration(seconds: 4),
           ),
         );
 
         setState(() {
-          _isDone = false;
-          _isVerifying = false;
+          _isRecording = false;
+          _audioPath = null;
+          _secondsLeft = 5;
         });
       }
     }
-  }
-
-  void _resetRecording() {
-    setState(() {
-      _isRecording = false;
-      _isDone = false;
-      _isVerifying = false;
-      _verifySuccess = false;
-      _audioPath = null;
-      _secondsLeft = 5;
-    });
-    _loadChallenge();
   }
 
   @override
@@ -241,8 +178,8 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
             decoration: BoxDecoration(
               color: AppColors.accent.withOpacity(0.06),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: AppColors.accent.withOpacity(0.2)),
+              border:
+              Border.all(color: AppColors.accent.withOpacity(0.2)),
             ),
             child: const Row(
               children: [
@@ -264,7 +201,7 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
           ),
           const SizedBox(height: 28),
 
-          // Challenge phrase
+          // Dynamic phrase from backend
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -285,16 +222,11 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
                   ),
                 ),
                 const SizedBox(height: 10),
-                _isLoadingChallenge
-                    ? const Center(
-                  child: CircularProgressIndicator(
-                      color: AppColors.accent),
-                )
-                    : Text(
-                  _challengePhrase,
+                Text(
+                  '"${widget.phrase}"',
                   style: const TextStyle(
                     color: AppColors.textPrimary,
-                    fontSize: 22,
+                    fontSize: 20,
                     fontWeight: FontWeight.w700,
                     fontStyle: FontStyle.italic,
                     height: 1.4,
@@ -302,7 +234,7 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Speak clearly in a quiet environment',
+                  'Read this phrase aloud clearly when recording',
                   style: TextStyle(
                     color: AppColors.textHint,
                     fontSize: 12,
@@ -313,7 +245,7 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
           ),
           const SizedBox(height: 40),
 
-          // Recording button or states
+          // Recording button or verifying
           Center(
             child: _isVerifying
                 ? const Column(
@@ -329,8 +261,6 @@ class _VoiceRecoveryScreenState extends State<VoiceRecoveryScreen>
                 ),
               ],
             )
-                : _isDone && !_verifySuccess
-                ? _FailedState(onRetry: _resetRecording)
                 : _RecordButton(
               isRecording: _isRecording,
               secondsLeft: _secondsLeft,
@@ -407,8 +337,8 @@ class _RecordButton extends StatelessWidget {
                     boxShadow: isRecording
                         ? [
                       BoxShadow(
-                        color: AppColors.accent
-                            .withOpacity(0.3 * waveAnim.value),
+                        color: AppColors.accent.withOpacity(
+                            0.3 * waveAnim.value),
                         blurRadius: 30,
                         spreadRadius: 5,
                       )
@@ -453,55 +383,6 @@ class _RecordButton extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ── Failed State ───────────────────────────────────────────────────
-class _FailedState extends StatelessWidget {
-  final VoidCallback onRetry;
-  const _FailedState({required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 100,
-          height: 100,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.error.withOpacity(0.1),
-            border: Border.all(color: AppColors.error, width: 2),
-          ),
-          child: const Icon(Icons.close_rounded,
-              color: AppColors.error, size: 48),
-        ),
-        const SizedBox(height: 20),
-        const Text(
-          'Voice not recognized',
-          style: TextStyle(
-            color: AppColors.error,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Your voice did not match.\nPlease try again.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 28),
-        ElevatedButton(
-          onPressed: onRetry,
-          child: const Text('Try Again'),
-        ),
-      ],
     );
   }
 }

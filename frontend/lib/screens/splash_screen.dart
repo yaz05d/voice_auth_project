@@ -125,7 +125,7 @@ class _SplashScreenState extends State<SplashScreen>
                                 ),
                               ),
                               TextSpan(
-                                text: 'Guard',
+                                text: 'Pass',
                                 style: TextStyle(
                                   color: AppColors.textPrimary,
                                   fontSize: 34,
@@ -140,7 +140,8 @@ class _SplashScreenState extends State<SplashScreen>
                         FadeTransition(
                           opacity: _taglineFade,
                           child: const Text(
-                            'Biometric Banking Security',
+                            'Third-Factor Voice Authentication',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 14,
