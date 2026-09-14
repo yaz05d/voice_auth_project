@@ -61,7 +61,7 @@ FastAPI Backend (Mahmoud)
 
 **Supervisor:** Dr. Amani Abu Jabal  
 **University:** German Jordanian University  
-**Department:** Computer Science — Cybersecurity Track  
+**Department:** Computer Science   
 **Semester:** Summer 2025/2026
 
 ---
