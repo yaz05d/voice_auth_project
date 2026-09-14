@@ -93,4 +93,4 @@ voice_auth_project/
 | ![Voice Login](assets/screenshots/voicelogin.jpg) | ![Forgot](assets/screenshots/forgotpassword.jpg) | ![Reset](assets/screenshots/resetpassword.jpg) |
 
 | New Password |
-| ![New Password](assets/screenshots/newpassword.jpg)|
+| ![New Password](assets/screenshots/newpassword.jpg) |
