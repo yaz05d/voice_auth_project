@@ -79,3 +79,18 @@ voice_auth_project/
 │ ├── routes/
 │ ├── models/
 │ └── services/
+
+
+
+## 📸 App Screenshots
+
+| Splash | Login | Voice Enrollment |
+|--------|-------|-----------------|
+| ![Splash](assets/screenshots/splash.jpg) | ![Login](assets/screenshots/login.jpg) | ![Enrollment](assets/screenshots/voicerecording.jpg) |
+
+| Voice Login | Forgot Password | Reset Recording |
+|-------------|------|----------------|
+| ![Voice Login](assets/screenshots/voicelogin.jpg) | ![Forgot](assets/screenshots/forgotpassword.jpg) | ![Reset](assets/screenshots/resetpassword.jpg) |
+
+| New Password |
+| ![New Password](assets/screenshots/newpassword.jpg)|
